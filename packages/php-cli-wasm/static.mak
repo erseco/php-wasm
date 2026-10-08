@@ -1,8 +1,8 @@
 #!/usr/bin/env make
 
-${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data: .cache/preload-collected
+${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data: .cache/preload-collected
 	- cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cli/${PRELOAD_NAME}.data ${PHP_CLI_DIST_DIR}
-	- cp -Lprf ${PHP_CLI_DIST_DIR}/${PRELOAD_NAME}.data ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/
+	- cp -Lprf ${PHP_CLI_DIST_DIR}/${PRELOAD_NAME}.data ${PHP_CLI_ASSET_DIR}/
 
 NOTPARALLEL+=\
 	web-cli-mjs \
@@ -20,7 +20,7 @@ WORKER_CLI_MJS=$(addprefix ${PHP_CLI_DIST_DIR}/,PhpCliWorker.mjs php${PHP_SUFFIX
 WORKER_CLI_JS=$(addprefix ${PHP_CLI_DIST_DIR}/,PhpBase.js PhpCliWorker.js php${PHP_SUFFIX}-cli-worker.js ${CJS_HELPERS_WEB})
 WEBVIEW_CLI_MJS=$(addprefix ${PHP_CLI_DIST_DIR}/,PhpCliWebview.mjs php${PHP_SUFFIX}-cli-webview.mjs ${MJS_HELPERS_WEB})
 WEBVIEW_CLI_JS=$(addprefix ${PHP_CLI_DIST_DIR}/,PhpBase.js PhpCliWebview.js php${PHP_SUFFIX}-cli-webview.js ${CJS_HELPERS_WEB})
-NODE_CLI_MJS=$(addprefix ${PHP_CLI_DIST_DIR}/,PhpCliNode.mjs php${PHP_SUFFIX}-cli-node.mjs ${MJS_HELPERS_WEB})
+NODE_CLI_MJS=$(addprefix ${PHP_CLI_DIST_DIR}/,PhpBase.mjs PhpCliNode.mjs php${PHP_SUFFIX}-cli-node.mjs ${MJS_HELPERS_WEB})
 NODE_CLI_JS=$(addprefix ${PHP_CLI_DIST_DIR}/,PhpBase.js PhpCliNode.js php${PHP_SUFFIX}-cli-node.js ${CJS_HELPERS})
 
 WEB_CLI_MJS_ASSETS= $(addprefix ${PHP_CLI_ASSET_DIR}/,${PHP_ASSET_LIST}) ${EXTRA_MODULES} ${HELPER_MJS}
@@ -33,14 +33,14 @@ NODE_CLI_MJS_ASSETS= $(addprefix ${PHP_CLI_ASSET_DIR}/,${PHP_ASSET_LIST}) ${EXTR
 NODE_CLI_JS_ASSETS= $(addprefix ${PHP_CLI_ASSET_DIR}/,${PHP_ASSET_LIST}) ${EXTRA_MODULES}
 
 ifneq (${PRELOAD_ASSETS},)
-WEB_CLI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
-WEB_CLI_JS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
-WORKER_CLI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
-WORKER_CLI_JS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
-WEBVIEW_CLI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
-WEBVIEW_CLI_JS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
-NODE_CLI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
-NODE_CLI_JS_ASSETS+= ${ENV_DIR}/${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEB_CLI_MJS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEB_CLI_JS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+WORKER_CLI_MJS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+WORKER_CLI_JS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEBVIEW_CLI_MJS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEBVIEW_CLI_JS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+NODE_CLI_MJS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
+NODE_CLI_JS_ASSETS+= ${PHP_CLI_ASSET_DIR}/${PRELOAD_NAME}.data
 endif
 
 ifeq (${WITH_SOURCEMAPS},1)
@@ -130,7 +130,7 @@ ifneq (${PRE_JS_FILES},)
 CLI_DEPENDENCIES+= ${PRE_JS_CACHE}
 endif
 
-CLI_DEPENDENCIES+= third_party/php${PHP_VERSION}-src/configured
+CLI_DEPENDENCIES+= third_party/php${PHP_VERSION}-src/configured ${PHP_LINK_DEPS}
 
 ${PHP_CLI_DIST_DIR}/%.js: source/%.mjs
 	npx babel $< --out-dir ${PHP_CLI_DIST_DIR}/
@@ -154,8 +154,7 @@ ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-web.js: ${CLI_DEPENDENCIES} | ${ORDER_O
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cli/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}* ${PHP_CLI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}.* ${PHP_CLI_ASSET_DIR}
 
 ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-web.js.wasm.map.MAPPED: ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-web.js
@@ -196,8 +195,7 @@ ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-worker.js: ${CLI_DEPENDENCIES} | ${ORDE
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cli/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}* ${PHP_CLI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}.* ${PHP_CLI_ASSET_DIR}
 
 ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-worker.js.wasm.map.MAPPED: ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-worker.js
@@ -238,8 +236,7 @@ ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-node.js: ${CLI_DEPENDENCIES} | ${ORDER_
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cli/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}* ${PHP_CLI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}.* ${PHP_CLI_ASSET_DIR}
 
 ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-node.js.wasm.map.MAPPED: ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-node.js
@@ -279,8 +276,7 @@ ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-webview.js: ${CLI_DEPENDENCIES} | ${ORD
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cli/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}* ${PHP_CLI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-${ENVIRONMENT}${RELEASE_SUFFIX}.${BUILD_TYPE}.* ${PHP_CLI_ASSET_DIR}
 
 ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-webview.js.wasm.map.MAPPED: ${PHP_CLI_DIST_DIR}/php${PHP_SUFFIX}-cli-webview.js

@@ -35,6 +35,7 @@ if(libType === 'dynamic')
 		, import('php-wasm-iconv')
 		, import('php-wasm-intl')
 		, import('php-wasm-openssl')
+		, import('php-wasm-phar')
 		, import('php-wasm-mbstring')
 		, import('php-wasm-sqlite')
 		, import('php-wasm-xml')
@@ -77,6 +78,17 @@ const escapeHtml = string => string
 	.replace(/'/g, "&#039;");
 
 /**
+ * Converts a rejected runtime operation into concise terminal output.
+ */
+const formatRuntimeError = error => {
+	const detail = error?.message ?? String(error);
+
+	return error?.name && error.name !== 'Error'
+		? `${error.name}: ${detail}`
+		: detail;
+};
+
+/**
  * Shared php-cli runtime arguments used by every terminal instance.
  */
 const phpArgs = {
@@ -96,6 +108,8 @@ export default function Terminal({
 	setStatusMessage = noop
 	, setExitCode = noop
 	, localEcho = true
+	, lineInput = false
+	, inputPrompt = '\x1b[1mphp> '
 	, onStdIn
 	, sharedLibs = emptySharedLibs
 	, interactive
@@ -114,10 +128,12 @@ export default function Terminal({
 	const timeout = useRef(null);
 
 	const [ready, setReady] = useState(false);
+	const [finished, setFinished] = useState(false);
 	const [output, setOutput] = useState([]);
-	const [prompt] = useState(parser.toHtml(escapeHtml('\x1b[1mphp> '))); // @TODO: get the prompt from PHP
+	const [prompt, setPrompt] = useState(parser.toHtml(escapeHtml(inputPrompt)));
 
 	const interactiveMode = interactive && !script && !code;
+	const acceptsInput = interactiveMode || lineInput;
 
 	const scrollToEnd = useCallback(() => {
 		if(timeout.current)
@@ -136,11 +152,14 @@ export default function Terminal({
 			return;
 		}
 
-		timeout.current = setTimeout(() => stdIn.current.scrollIntoView(), 32);
+		timeout.current = setTimeout(() => stdIn.current.scrollIntoView({
+			block: 'nearest'
+			, inline: 'nearest'
+		}), 32);
 	}, []);
 
 	const focusInput = useCallback(() => {
-		if(!phpRef.current?.interactive)
+		if(!acceptsInput)
 		{
 			scrollToEnd();
 			return;
@@ -148,9 +167,9 @@ export default function Terminal({
 
 		if(window.getSelection().toString() === '')
 		{
-			stdIn.current?.focus();
+			stdIn.current?.focus({preventScroll: true});
 		}
-	}, [scrollToEnd]);
+	}, [acceptsInput, scrollToEnd]);
 
 	useEffect(() => {
 		onStdInRef.current = onStdIn;
@@ -166,6 +185,7 @@ export default function Terminal({
 		let launchTimeout = null;
 
 		setStatusMessageRef.current?.('loading...');
+		setFinished(false);
 
 		const onOutput = async event => {
 			if(!active)
@@ -215,26 +235,28 @@ export default function Terminal({
 		phpRef.current = php;
 		setReady(interactiveMode);
 
-		const firstInput = async () => {
+		const onStdInHandler = async event => {
+			const currentPrompt = event.detail?.prompt ?? inputPrompt;
+
+			setPrompt(parser.toHtml(escapeHtml(currentPrompt)));
+			setFinished(false);
+			onStdInRef.current && onStdInRef.current(event);
 			setStatusMessageRef.current?.('php-cli-wasm ready!');
 			setReady(true);
 			await new Promise(resolve => setTimeout(resolve, 10));
-			focusInput();
-		};
 
-		const onStdInHandler = event => {
-			onStdInRef.current && onStdInRef.current(event);
+			if(active)
+			{
+				focusInput();
+			}
 		};
-
-		const once = {once: true};
 
 		php.addEventListener('output', onOutput);
 		php.addEventListener('error', onError);
 
-		if(interactiveMode)
+		if(acceptsInput)
 		{
 			php.addEventListener('stdin-request', onStdInHandler);
-			php.addEventListener('stdin-request', firstInput, once);
 		}
 		else
 		{
@@ -242,14 +264,53 @@ export default function Terminal({
 		}
 
 		const runPhp = async () => {
-			await php.binary;
+			const reportFailure = error => {
+				if(!active)
+				{
+					return;
+				}
 
-			if(!active)
+				const text = `php-cli-wasm failed: ${formatRuntimeError(error)}`;
+
+				setOutput(output => [...output, {
+					type: 'stderr'
+					, text: parser.toHtml(escapeHtml(text))
+				}]);
+				setStatusMessageRef.current?.('php-cli-wasm failed.');
+				setFinished(true);
+				scrollToEnd();
+			};
+
+			const notifyExit = async exitCode => {
+				try
+				{
+					await setExitCodeRef.current?.(exitCode);
+				}
+				catch(error)
+				{
+					reportFailure(error);
+				}
+			};
+
+			let ret;
+
+			try
 			{
+				await php.binary;
+
+				if(!active)
+				{
+					return;
+				}
+
+				ret = await php.run(['-c', '/php.ini']);
+			}
+			catch(error)
+			{
+				reportFailure(error);
+				await notifyExit(typeof error?.status === 'number' ? error.status : 1);
 				return;
 			}
-
-			const ret = await php.run(['-c', '/php.ini']);
 
 			if(!active)
 			{
@@ -262,8 +323,10 @@ export default function Terminal({
 			}
 			else
 			{
+				setReady(false);
+				setFinished(true);
 				setStatusMessageRef.current?.('php-cli-wasm done.');
-				setExitCodeRef.current?.(ret);
+				await notifyExit(ret);
 			}
 		};
 
@@ -289,10 +352,9 @@ export default function Terminal({
 			php.removeEventListener('output', onOutput);
 			php.removeEventListener('error', onError);
 
-			if(interactiveMode)
+			if(acceptsInput)
 			{
 				php.removeEventListener('stdin-request', onStdInHandler);
-				php.removeEventListener('stdin-request', firstInput, once);
 			}
 
 			if(phpRef.current === php)
@@ -300,7 +362,7 @@ export default function Terminal({
 				phpRef.current = null;
 			}
 		};
-	}, [code, extras, focusInput, interactiveMode, script, scrollToEnd, sharedLibs]);
+	}, [acceptsInput, code, extras, focusInput, inputPrompt, interactiveMode, script, scrollToEnd, sharedLibs]);
 
 	useEffect(() => {
 		return refreshPhp();
@@ -327,9 +389,14 @@ export default function Terminal({
 			scrollToEnd();
 		}
 
+		if(lineInput)
+		{
+			setReady(false);
+		}
+
 		await php.provideInput(inputValue);
-		stdIn.current?.focus();
-	}, [localEcho, prompt, scrollToEnd]);
+		stdIn.current?.focus({preventScroll: true});
+	}, [lineInput, localEcho, prompt, scrollToEnd]);
 
 	const checkEnter = async event => {
 		if(event.key === 'ArrowUp')
@@ -390,7 +457,7 @@ export default function Terminal({
 	};
 
 	const handleTerminalClicked = () => {
-		if(!phpRef.current?.interactive)
+		if(!acceptsInput)
 		{
 			return;
 		}
@@ -406,7 +473,7 @@ export default function Terminal({
 		<div className='scroll-to-bottom' onClick={handleScrollToBottom}>&#x1F847;</div>
 		<div className='console-output'>
 			{output.map((line, index) => (<div className = 'line' data-type = {line.type} key = {index} dangerouslySetInnerHTML = {{__html: line.text}} ></div>))}
-			{interactiveMode && (
+			{acceptsInput && !finished && (
 				<div className = 'console-input' data-ready = {ready} onClick={focusInput}>
 					{!ready && (<img src = {loading} alt = "loading" />)}
 					<span dangerouslySetInnerHTML = {{__html:prompt}}></span>

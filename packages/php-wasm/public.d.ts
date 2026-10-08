@@ -1,5 +1,6 @@
 export type PhpRuntimeVersion = '8.0' | '8.1' | '8.2' | '8.3' | '8.4' | '8.5';
-export type PhpRuntimeVariant = '' | '_sdl';
+/** @deprecated Select a runtime package instead. */
+export type PhpRuntimeVariant = never;
 export type PhpRuntimeValue = object | string | number | boolean | Uint8Array | null | undefined | void;
 export type PhpTemplateValue = PhpRuntimeValue | Array<PhpRuntimeValue>;
 
@@ -27,31 +28,37 @@ export interface PhpVhost {
 export interface PhpRuntimeArgs {
 	autoTransaction?: boolean;
 	version?: PhpRuntimeVersion;
-	variant?: PhpRuntimeVariant;
+	/** @deprecated Install php-sdl-wasm and use PhpSdl for SDL. */
+	variant?: never;
 	interactive?: boolean;
 	script?: string;
 	code?: string;
 	shared?: Record<string, object | string | number | boolean | Function | undefined>;
+	ENV?: Record<string, string>;
 	locateFile?: (path: string, directory?: string) => string | URL | undefined;
 	files?: PhpPreloadFile[];
 	sharedLibs?: Array<string | URL | PhpSharedLibrary>;
 	dynamicLibs?: Array<string | URL | PhpSharedLibrary>;
 	debug?: boolean;
 	ini?: string;
-	persist?: object;
+	persist?: object | boolean;
 	staticFS?: boolean;
 	vHosts?: PhpVhost[];
 	[key: string]: object | string | number | boolean | Function | undefined;
 }
 
+export type PhpRuntimeFactory<Args = PhpRuntimeArgs> = ((args: Args) => PhpBinaryRuntime | Promise<PhpBinaryRuntime>)
+	| (new (args: Args) => PhpBinaryRuntime);
+
 export interface PhpBaseModuleFactory {
-	default: new (args: object) => object;
+	default: PhpRuntimeFactory;
 }
+
 
 export interface PhpBinaryRuntime {
 	inputDataQueue?: string[];
 	awaitingInput?: ((value: string | undefined) => void) | null;
-	triggerStdin?: () => void;
+	triggerStdin?: (prompt?: string | null) => void;
 	persist?: boolean;
 	ccall?: Function;
 	lengthBytesUTF8?: Function;
@@ -61,42 +68,68 @@ export interface PhpBinaryRuntime {
 	setValue?: Function;
 	UTF8ToString?: Function;
 	getValue?: Function;
-	HEAP8?: Int8Array;
+	HEAPU8?: Uint8Array;
 	hasVrzno?: boolean;
 	zvalToJS?: Function;
+	consumeZval?: Function;
 	onRefresh?: Set<Function>;
 	FS?: {
 		syncfs?: (populate: boolean, callback: (error?: Error) => void) => void;
 	} & object;
 }
 
-export declare class PhpBase extends EventTarget {
-	constructor(phpBinLoader: Promise<PhpBaseModuleFactory>, args?: PhpRuntimeArgs, sapi?: string);
-	autoTransaction: boolean;
-	transactionStarted: boolean | Promise<void>;
-	phpVersion?: PhpRuntimeVersion;
-	phpVariant?: PhpRuntimeVariant;
-	phpArgs: PhpRuntimeArgs;
-	queue: Array<[Function, Array<string | number | boolean | object | undefined>, (value?: PhpRuntimeValue) => void, (reason?: object | string | number | boolean | Error) => void]>;
-	binary: Promise<PhpBinaryRuntime>;
-	inputString(byteString: string): void;
-	input(items: Iterable<number>): void;
-	flush(): void;
-	tokenize(phpCode: string): string[];
-	startTransaction(): Promise<void>;
-	commitTransaction(readOnly?: boolean): Promise<void>;
-	run(phpCode: string): Promise<number>;
-	exec(phpCode: string): Promise<PhpRuntimeValue>;
-	x(fragments: TemplateStringsArray, ...values: PhpTemplateValue[]): Promise<PhpRuntimeValue>;
-	r(fragments: TemplateStringsArray, ...values: PhpTemplateValue[]): Promise<string>;
-	refresh(): Promise<void>;
-	analyzePath(path: string): Promise<object>;
-	readdir(path: string): Promise<string[]>;
-	readFile(path: string, options?: object): Promise<string | Uint8Array>;
-	stat(path: string): Promise<object>;
-	mkdir(path: string): Promise<void>;
-	rmdir(path: string): Promise<void>;
-	rename(path: string, newPath: string): Promise<void>;
-	writeFile(path: string, data: string | Uint8Array | ArrayBufferLike | Iterable<number>, options?: object): Promise<void>;
-	unlink(path: string): Promise<void>;
+/** Options for listing names or serializable directory entry types. */
+export interface PhpReadDirectoryOptions {
+	withFileTypes?: boolean;
 }
+
+/** Entry type resolved using the same link-following behavior as analyzePath. */
+export interface PhpDirectoryEntry {
+	name: string;
+	isFolder: boolean;
+}
+
+/** Serializable filesystem node metadata returned by mkdir and analyzePath. */
+export interface PhpFileNode {
+	id: number;
+	mode: number;
+	mount: { mountpoint: string; mounts: string[] };
+	isDevice: boolean;
+	isFolder: boolean;
+	read: boolean;
+	write: boolean;
+}
+
+export type PhpPathAnalysis = { exists: false } | {
+	exists: boolean;
+	object: PhpFileNode & { exists: true };
+	parentObject: undefined;
+	path: string | null;
+	name: string | null;
+	parentExists: boolean;
+	parentPath: string | null;
+	error: number;
+};
+
+export interface PhpFileStat {
+	dev: number;
+	ino: number;
+	mode: number;
+	nlink: number;
+	uid: number;
+	gid: number;
+	rdev: number;
+	size: number;
+	atime: Date;
+	mtime: Date;
+	ctime: Date;
+	blksize: number;
+	blocks: number;
+}
+
+export interface PhpReadFileOptions {
+	encoding?: 'binary' | 'utf8';
+	flags?: string | number;
+}
+
+export type { PhpBase } from './PhpBase.mjs';

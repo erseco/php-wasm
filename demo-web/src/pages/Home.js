@@ -9,9 +9,10 @@ import drupalIcon from '../assets/frameworks/drupal-icon.svg';
 import codeIgniterIcon from '../assets/frameworks/codeigniter-icon.svg';
 import laravelIcon from '../assets/frameworks/laravel-icon.svg';
 import laminasIcon from '../assets/frameworks/laminas-icon.svg';
+import wordpressIcon from '../assets/frameworks/wordpress-icon.svg';
 import reactIcon from '../assets/frameworks/react-icon.svg';
 
-// import rolodexIcon from '../assets/icons/rolodex-icon-32.png';
+import rolodexIcon from '../assets/icons/rolodex-icon-32.png';
 import editorIcon from '../assets/icons/editor-icon-32.png';
 import vscodeIcon from '../assets/icons/vscode-32.png';
 import donateIcon from '../assets/icons/donate-icon-32.png';
@@ -29,28 +30,38 @@ import { useEffect, useMemo, useState } from 'react';
 import Header from '../components/Header';
 import { basePath } from '../lib/runtimePaths';
 
+const frameworkIcons = [
+	{src: cakePhpIcon, alt: 'CakePHP logo'}
+	, {src: codeIgniterIcon, alt: 'CodeIgniter logo'}
+	, {src: drupalIcon, alt: 'Drupal logo'}
+	, {src: laminasIcon, alt: 'Laminas logo'}
+	, {src: laravelIcon, alt: 'Laravel logo'}
+	, {src: wordpressIcon, alt: 'WordPress logo'}
+];
+const carouselIcons = [...frameworkIcons, frameworkIcons[0]];
+
 /**
  * Renders the main demo launcher and cycles the framework marquee artwork.
  */
 function Home()
 {
-	const [offset, setOffset] = useState(Math.trunc(Math.random() * 5));
+	const [offset, setOffset] = useState(Math.trunc(Math.random() * frameworkIcons.length));
 	const [scrollState, setScrollState] = useState(1);
 	const [showMore, setShowMore] = useState(false);
 
 	const query = useMemo(() => new URLSearchParams(window.location.search), []);
 
 	useEffect(() => {
-		if(query.has('code') || query.has('demo'))
+		if(query.has('code') || query.has('demo') || new URLSearchParams(window.location.hash.slice(1)).has('code'))
 		{
-			window.location = basePath(`embedded-php.html${window.location.search}`);
+			window.location = basePath(`embedded-php.html${window.location.search}${window.location.hash}`);
 		}
 	}, [query]);
 
 	useEffect(() => {
 		const speed = 1400;
 		setTimeout(() => {
-			if(offset >= 5)
+			if(offset >= frameworkIcons.length)
 			{
 				setTimeout(() => {
 					setScrollState(0);
@@ -64,19 +75,19 @@ function Home()
 			else
 			{
 				setScrollState(1);
-				setOffset((offset + 1) % 6);
+				setOffset((offset + 1) % carouselIcons.length);
 			}
 		}, speed);
 
 	}, [offset, scrollState]);
 
 	return (
-		<div className = "home">
+		<div className = "home viewport-page">
 			<div className='home-menu bevel'>
 				<Header />
 				<h2>Select a demo:</h2>
 				<div className='row'>
-					<a className = "big-link inset" href = {basePath('embedded-php.html?demo=sdl-sine.php')}>
+					<a className = "big-link inset" href = {basePath('embedded-php.html?demo=sdl-cube.php')}>
 						<div className = "big-icon embedded">
 							<img alt = "page showing php logo" src = {phpPageIcon} />
 						</div>
@@ -86,12 +97,9 @@ function Home()
 					<a className = "big-link inset" href = {basePath('select-framework.html')}>
 						<div className = "big-icon cgi" style={{'--offset': offset}} data-scroll-state = {scrollState}>
 							<div className = "offset-column">
-								<img src = {cakePhpIcon} alt = "CakePHP logo" />
-								<img src = {codeIgniterIcon} alt = "CodeIgniter logo" />
-								<img src = {drupalIcon} alt = "Drupal logo" />
-								<img src = {laminasIcon} alt = "Laminas logo" />
-								<img src = {laravelIcon} alt = "Laravel logo" />
-								<img src = {cakePhpIcon} alt = "CakePHP logo" />
+								{carouselIcons.map(({src, alt}, index) => (
+									<img key = {`${alt}:${index}`} src = {src} alt = {alt} />
+								))}
 							</div>
 						</div>
 						<span className = "title">PHP CGI Demo</span>
@@ -109,10 +117,6 @@ function Home()
 							<img src = {vscodeIcon} className = "icon" alt = "Code Editor" />
 							VSCode
 						</button>
-						{/* <button>
-							<img src = {rolodexIcon} className = "icon" alt = "SQL Editor" />
-							SQL Editor
-						</button> */}
 					</div>
 					<div>
 						<button onClick = {() => window.open('https://github.com/seanmorris/php-wasm?tab=readme-ov-file#-php-wasm')}>
@@ -132,6 +136,11 @@ function Home()
 
 				<h3><button onClick = { () => {setShowMore(!showMore);}} className='square'><img src = {showMore ? upIcon : downIcon} alt = "" /></button><span onClick = { () => {setShowMore(!showMore);}}>More...</span></h3>
 				{ showMore && ( <div className = "inset extra-demos">
+					<a href = {basePath('query-workbench.html')} className="icon-box">
+						<img src = {rolodexIcon} alt = "" />
+						<span>Query Workbench</span>
+					</a>
+
 					<a target = "_blank" href = {basePath('cli-preview.html')} className="icon-box" rel="noreferrer">
 						<img src = {cmdIcon} alt = "PHP-CLI Preview" />
 						<span>PHP-CLI Preview</span>

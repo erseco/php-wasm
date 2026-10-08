@@ -1,11 +1,17 @@
+---
+title: LICENSE
+---
 <!--
-Vendored from php-wasm-site commit 73d20fb6d1c1dce8519354e821761f60df4c220c
-Source: https://github.com/seanmorris/php-wasm-site/blob/73d20fb6d1c1dce8519354e821761f60df4c220c/pages/LICENSE.md
+Vendored from php-wasm-site commit 2ec67be087fe50a57fb296d730f597e0979b6732
+Source: https://github.com/seanmorris/php-wasm-site/blob/2ec67be087fe50a57fb296d730f597e0979b6732/pages/LICENSE.md
 Validation refs:
 - https://github.com/seanmorris/php-wasm/blob/a8b1c8953c98c72811e0e4dadd1c95af38a94754/test/docs/report.mjs
 -->
----
----
+php-wasm is dual licensed under the Apache License, Version 2.0, reproduced
+below, and the
+[GNU General Public License, Version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html).
+You may use it under the terms of either license.
+
 Apache License
 ==============
 

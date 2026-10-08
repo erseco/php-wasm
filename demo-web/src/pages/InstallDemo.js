@@ -4,9 +4,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Terminal from '../components/Terminal';
 import loader from '../assets/ui/bar-spin.svg';
-import { getPhpBus, waitForPhpBusRequest } from '../lib/phpBus';
+import { waitForPhpBusRequest } from '../lib/phpBus';
+import { getReadyPhpBus } from '../lib/phpRuntime';
 import { basePath } from '../lib/runtimePaths';
-import { ensureServiceWorker, serviceWorkerControlTimeoutMs } from '../lib/serviceWorker';
+import {
+	drupalPgsqlDatabase
+	, drupalPgsqlReadyQuery
+	, isDrupalPgsqlReady
+} from '../lib/drupalDatabase';
 
 // import zlib from 'php-wasm-zlib';
 // import libzip from 'php-wasm-libzip';
@@ -15,13 +20,12 @@ import '../styles/Common.css';
 import '../styles/InstallDemo.css';
 
 const packages = {
-	'drupal-7': {
-		// Switch these paths to the PostgreSQL backup if needed.
-		name:  'Drupal 7'
-		, file:  '/backups/drupal-7.95.zip'
-		, path:  'drupal-7.95'
+	'drupal-11': {
+		name:  'Drupal 11.4.5'
+		, file:  '/backups/drupal-11.4.5.zip'
+		, path:  'drupal-11.4.5'
 		, vHost: 'drupal'
-		, dir:   'drupal-7.95'
+		, dir:   'drupal-11.4.5/web'
 		, entry: 'index.php'
 	}
 	, 'cakephp-5': {
@@ -56,6 +60,62 @@ const packages = {
 		, dir:   'laravel-11/public'
 		, entry: 'index.php'
 	}
+	, 'wordpress-7.1': {
+		name:  'WordPress 7.1'
+		, file:  '/backups/wordpress-7.1.zip'
+		, path:  'wordpress-7.1'
+		, vHost: 'wordpress'
+		, dir:   'wordpress-7.1'
+		, entry: 'index.php'
+	}
+};
+
+const drupalDatabaseVariants = {
+	sqlite: packages['drupal-11']
+	, pgsql: {
+		...packages['drupal-11']
+		, name: 'Drupal 11.4.5 with PostgreSQL'
+		, path: 'drupal-11.4.5-pgsql'
+		, dir: 'drupal-11.4.5-pgsql/web'
+		, installMarker: 'drupal-11.4.5-pgsql/.php-wasm-install-complete'
+		, refreshCgi: false
+		, sql: '/backups/drupal-11.4.5-pgsql.sql'
+		, sqlDatabase: drupalPgsqlDatabase
+		, sqlReadyQuery: drupalPgsqlReadyQuery
+		, patches: [
+			{
+				path: 'web/sites/default/settings.php'
+				, append: `
+
+// PHP-WASM PostgreSQL demo override.
+// A cold Drupal cache build issues enough browser-backed queries to exceed
+// PHP's default 30-second request limit.
+set_time_limit(180);
+
+$databases['default']['default'] = array (
+  'database' => 'postgres',
+  'username' => 'postgres',
+  'password' => '',
+  'prefix' => '',
+  'host' => 'drupal-11-pg18',
+  'port' => '5432',
+  'driver' => 'pgsql',
+  'namespace' => 'Drupal\\pgsql\\Driver\\Database\\pgsql',
+  'autoload' => 'core/modules/pgsql/src/Driver/Database/pgsql/',
+);
+`
+			}
+			, {
+				path: 'web/core/themes/olivero/templates/includes/get-started.html.twig'
+				, replacements: [
+					[
+						'%2Fpersist%2Fdrupal-11.4.5%2Fweb'
+						, '%2Fpersist%2Fdrupal-11.4.5-pgsql%2Fweb'
+					]
+				]
+			}
+		]
+	}
 };
 
 /**
@@ -67,15 +127,18 @@ const informOpener = (selectedFrameworkName) => {
 	);
 };
 
-const serviceWorkerRetryKey = 'php-wasm-install-demo-service-worker-retry';
-const serviceWorkerReloadDelayMs = 500;
 const installerRpcTimeouts = {
-	analyzePath: 5000
+	awaitFilesystem: 180000
+	, analyzePath: 5000
+	, readFile: 30000
 	, writeFile: 30000
+	, unlink: 30000
 	, getSettings: 10000
 	, setSettings: 10000
 	, storeInit: 10000
-	, refresh: 30000
+	, replaceSql: 180000
+	, runSql: 30000
+	, refresh: 120000
 };
 /**
  * Converts install-time RPC failures into readable status strings.
@@ -124,6 +187,56 @@ const sendInstallMessage = (bus, action, params = []) => {
 };
 
 /**
+ * Applies backend-specific text patches after a package has been unpacked.
+ */
+const applyPackagePatches = async (bus, selectedFramework) => {
+	const decoder = new TextDecoder();
+	const encoder = new TextEncoder();
+
+	for(const patch of selectedFramework.patches ?? [])
+	{
+		const path = `/persist/${selectedFramework.path}/${patch.path}`;
+		const bytes = await sendInstallMessage(bus, 'readFile', [path]);
+		let contents = decoder.decode(bytes);
+
+		for(const [search, replacement] of patch.replacements ?? [])
+		{
+			contents = contents.split(search).join(replacement);
+		}
+
+		contents += patch.append ?? '';
+		await sendInstallMessage(bus, 'writeFile', [path, encoder.encode(contents)]);
+	}
+};
+
+/**
+ * Points a shared CGI vhost at the selected package only after it is ready.
+ */
+const activatePackage = async (bus, selectedFramework, vHostPrefix) => {
+	const settings = createSerializableSettings(
+		await sendInstallMessage(bus, 'getSettings')
+	);
+	const existingvHost = settings.vHosts.find(vHost => vHost.pathPrefix === vHostPrefix);
+
+	if(!existingvHost)
+	{
+		settings.vHosts.push({
+			pathPrefix: vHostPrefix
+			, directory:  '/persist/' + selectedFramework.dir
+			, entrypoint: selectedFramework.entry
+		});
+	}
+	else
+	{
+		existingvHost.directory = '/persist/' + selectedFramework.dir;
+		existingvHost.entrypoint = selectedFramework.entry;
+	}
+
+	await sendInstallMessage(bus, 'setSettings', [settings]);
+	await sendInstallMessage(bus, 'storeInit');
+};
+
+/**
  * Downloads, restores, and activates a selected framework package.
  */
 export default function InstallDemo()
@@ -131,6 +244,8 @@ export default function InstallDemo()
 	const query = useMemo(() => new URLSearchParams(window.location.search), []);
 	const [message, setMessage] = useState('Initializing...');
 	const [terminal, setTerminal] = useState('');
+	const [startupAttempt, setStartupAttempt] = useState(0);
+	const [canRetryStartup, setCanRetryStartup] = useState(false);
 	const bootstrapPromise = useRef(null);
 	const disposed = useRef(false);
 
@@ -151,53 +266,15 @@ export default function InstallDemo()
 			}
 		};
 
-		const failMissingController = async () => {
-			if(!sessionStorage.getItem(serviceWorkerRetryKey))
-			{
-				sessionStorage.setItem(serviceWorkerRetryKey, '1');
-				updateMessage('No Service Worker Detected, Reloading...');
-				await new Promise(resolve => setTimeout(resolve, serviceWorkerReloadDelayMs));
-				window.location.reload();
-				return;
-			}
-
-			sessionStorage.removeItem(serviceWorkerRetryKey);
-			updateMessage('Service worker did not take control of the installer popup. Close this window and try again.');
-		};
-
 		if(!bootstrapPromise.current)
 		{
 			bootstrapPromise.current = (async () => {
+				let runtimeReady = false;
+
 				try
 				{
-					const serviceWorker = await ensureServiceWorker({
-						timeoutMs: serviceWorkerControlTimeoutMs
-					});
-
-					if(!serviceWorker.controlled)
-					{
-						if(serviceWorker.controlSource === 'error')
-						{
-							updateMessage('Failed to register the CGI service worker for the installer popup.');
-							return;
-						}
-
-						if(serviceWorker.controlSource === 'unsupported')
-						{
-							updateMessage('This browser does not support service workers for the installer popup.');
-							return;
-						}
-
-						await failMissingController();
-						return;
-					}
-
-					sessionStorage.removeItem(serviceWorkerRetryKey);
-					const bus = await getPhpBus({
-						timeoutMs: serviceWorkerControlTimeoutMs
-					});
-
 					const selectedFrameworkName = query.get('framework');
+					const selectedDatabase = query.get('database') ?? 'sqlite';
 					const overwrite = query.get('overwrite') ?? false;
 
 					if(!selectedFrameworkName)
@@ -206,27 +283,70 @@ export default function InstallDemo()
 						return;
 					}
 
-					if(!(selectedFrameworkName in packages))
+					if(!Object.hasOwn(packages, selectedFrameworkName))
 					{
 						updateMessage('Invalid framework selected.');
 						return;
 					}
 
-					const selectedFramework = packages[selectedFrameworkName];
+					if(
+						selectedFrameworkName === 'drupal-11'
+						&& !Object.hasOwn(drupalDatabaseVariants, selectedDatabase)
+					) {
+						updateMessage('Invalid database selected.');
+						return;
+					}
 
-						updateMessage('Downloading init script...');
-						const initPhpCode = await (await fetch(basePath('scripts/init.php'))).text();
+					const selectedFramework = selectedFrameworkName === 'drupal-11'
+						? drupalDatabaseVariants[selectedDatabase]
+						: packages[selectedFrameworkName];
 
-						updateMessage('Acquiring Lock...');
-						await navigator.locks.request('php-wasm-demo-install', async () => {
+					updateMessage('Starting PHP runtime...');
+					const bus = await getReadyPhpBus({onProgress: updateMessage});
+
+					runtimeReady = true;
+
+					updateMessage('Downloading init script...');
+					const initPhpCode = await (await fetch(basePath('scripts/init.php'))).text();
+
+					updateMessage('Acquiring Lock...');
+					await navigator.locks.request('php-wasm-demo-install', async () => {
 							updateMessage('Checking for Existing Install...');
-							const checkPath = await sendInstallMessage(bus, 'analyzePath', ['/persist/' + selectedFramework.dir]);
+							const checkPath = await sendInstallMessage(bus, 'analyzePath', [
+								'/persist/' + (selectedFramework.installMarker ?? selectedFramework.dir)
+							]);
+							const vHostPrefix = basePath(`cgi-bin/${selectedFramework.vHost}`);
+							let installReady = checkPath.exists;
 
-							if(!overwrite && checkPath.exists)
+							if(!overwrite && installReady && selectedFramework.sqlReadyQuery)
+							{
+								const readiness = await sendInstallMessage(bus, 'runSql', [
+									selectedFramework.sqlDatabase
+									, selectedFramework.sqlReadyQuery
+								]);
+
+								installReady = isDrupalPgsqlReady(readiness);
+							}
+
+							if(!selectedFramework.sql)
+							{
+								await activatePackage(bus, selectedFramework, vHostPrefix);
+							}
+
+							if(!overwrite && installReady)
 							{
 								updateMessage('Already installed...');
+								if(selectedFramework.sql)
+								{
+									await activatePackage(bus, selectedFramework, vHostPrefix);
+								}
+								await sendInstallMessage(bus, 'awaitFilesystem', []);
+								if(selectedFramework.refreshCgi !== false)
+								{
+									await sendInstallMessage(bus, 'refresh', []);
+								}
 								informOpener(selectedFrameworkName);
-								window.location = basePath(`cgi-bin/${selectedFramework.vHost}`);
+								window.location.href = basePath(`cgi-bin/${selectedFramework.vHost}`);
 								return;
 							}
 
@@ -235,84 +355,107 @@ export default function InstallDemo()
 							await sendInstallMessage(bus, 'writeFile', ['/persist/restore.zip', new Uint8Array(zipContents)]);
 							await sendInstallMessage(bus, 'writeFile', ['/config/restore-path.tmp', '/persist/' + selectedFramework.path]);
 
+							if(selectedFramework.installMarker && checkPath.exists)
+							{
+								await sendInstallMessage(bus, 'unlink', [
+									`/persist/${selectedFramework.installMarker}`
+								]);
+								await sendInstallMessage(bus, 'awaitFilesystem', []);
+							}
+
 							updateMessage(`Setting up ${selectedFrameworkName}...`);
-							const settings = createSerializableSettings(
-								await sendInstallMessage(bus, 'getSettings')
-							);
-							const vHostPrefix = basePath(`cgi-bin/${selectedFramework.vHost}`);
-							const existingvHost = settings.vHosts.find(vHost => vHost.pathPrefix === vHostPrefix);
-
-							if(!existingvHost)
-							{
-								settings.vHosts.push({
-									pathPrefix: vHostPrefix
-									, directory:  '/persist/' + selectedFramework.dir
-									, entrypoint: selectedFramework.entry
-								});
-							}
-							else
-							{
-								existingvHost.directory = '/persist/' + selectedFramework.dir;
-								existingvHost.entrypoint = selectedFramework.entry;
-							}
-
-							await sendInstallMessage(bus, 'setSettings', [settings]);
-							await sendInstallMessage(bus, 'storeInit');
 
 							updateMessage(`Unpacking ${selectedFramework.file}...`);
 
-							const onComplete = async (exitCode) => {
-								if(exitCode !== 0) return;
-								if(selectedFramework.sql)
+							await new Promise(resolveInstall => {
+								let completionStarted = false;
+								const onComplete = async (exitCode) => {
+									if(completionStarted)
+									{
+										return;
+									}
+
+									completionStarted = true;
+								try
 								{
-									updateMessage('Setting up PostgreSQL...');
-									const sqlFile = await (await fetch(selectedFramework.sql)).text();
-									await waitForPhpBusRequest(
-										bus.execSql(`idb://host= dbname=drupal port=5432`, sqlFile)
-										, {
-											action: 'execSql'
-											, params: [`idb://host= dbname=drupal port=5432`, sqlFile]
-										}
-									);
-									await waitForPhpBusRequest(
-										bus.runSql(`idb://host= dbname=drupal port=5432`, 'select * from information_schema.tables')
-										, {
-											action: 'runSql'
-											, params: [`idb://host= dbname=drupal port=5432`, 'select * from information_schema.tables']
-										}
-									);
+									if(exitCode !== 0)
+									{
+										updateMessage(
+											`Could not unpack ${selectedFramework.file} (PHP CLI exited with code ${exitCode}).`
+										);
+										return;
+									}
+
+									if(selectedFramework.patches)
+									{
+										updateMessage(`Configuring ${selectedFramework.name}...`);
+										await applyPackagePatches(bus, selectedFramework);
+									}
+
+									if(selectedFramework.sql)
+									{
+										updateMessage('Setting up PostgreSQL...');
+										const sqlFile = await (await fetch(basePath(selectedFramework.sql))).text();
+										await sendInstallMessage(bus, 'replaceSql', [
+											selectedFramework.sqlDatabase
+											, sqlFile
+										]);
+										await activatePackage(bus, selectedFramework, vHostPrefix);
+									}
+
+									if(selectedFramework.installMarker)
+									{
+										await sendInstallMessage(bus, 'writeFile', [
+											`/persist/${selectedFramework.installMarker}`
+											, new TextEncoder().encode('complete\n')
+										]);
+									}
+
+									updateMessage('Preparing PHP-CGI...');
+									await sendInstallMessage(bus, 'awaitFilesystem', []);
+									if(selectedFramework.refreshCgi !== false)
+									{
+										await sendInstallMessage(bus, 'refresh', []);
+									}
+
+									updateMessage(`Opening ${selectedFrameworkName}...`);
+									informOpener(selectedFrameworkName);
+									window.location.href = vHostPrefix;
 								}
+								catch(error)
+								{
+									console.error(error);
+									updateMessage(formatInstallError(error));
+								}
+									finally
+									{
+										resolveInstall();
+									}
+								};
 
-								updateMessage('Refreshing PHP-CGI...');
-								await sendInstallMessage(bus, 'refresh', []);
-
-								updateMessage(`Opening ${selectedFrameworkName}...`);
-								informOpener(selectedFrameworkName);
-								window.location = vHostPrefix;
-							};
-
-							updateTerminal(
-								<div style={{
-									position: 'relative'
-									, minWidth: 'min(45rem, 90vw)'
-									, minHeight: '30rem'
-									, resize: 'both'
-								}}>
-									<Terminal
-										className = "inset"
-										// sharedLibs = {[zlib, libzip]}
-										setExitCode = {onComplete}
-										interactive = {false}
-										code = {'?>' + initPhpCode}
-									/>
-								</div>
-							);
-						});
+								updateTerminal(
+									<div className = "install-terminal">
+										<Terminal
+											className = "inset"
+											// sharedLibs = {[zlib, libzip]}
+											setExitCode = {onComplete}
+											interactive = {false}
+											code = {'?>' + initPhpCode}
+										/>
+									</div>
+								);
+							});
+					});
 				}
 				catch(error)
 				{
 					console.error(error);
 					updateMessage(formatInstallError(error));
+
+					if(!disposed.current)
+					{
+						setCanRetryStartup(!runtimeReady && Boolean(navigator.serviceWorker));
+					}
 				}
 			})();
 		}
@@ -320,19 +463,32 @@ export default function InstallDemo()
 		return () => {
 			disposed.current = true;
 		};
-	}, [query]);
+	}, [query, startupAttempt]);
+
+	/**
+	 * Retries only a failed startup, before any installation work has begun.
+	 */
+	const retryStartup = () => {
+		bootstrapPromise.current = null;
+		setCanRetryStartup(false);
+		setMessage('Initializing...');
+		setStartupAttempt(attempt => attempt + 1);
+	};
 
 	return (
-		<div className = "install-demo">
+		<div className = "install-demo viewport-page">
 			<div className = "center bevel">
 				<div className = "inset padded">
 					<h2>{message}</h2>
 					{terminal}
-					<img
+					{canRetryStartup ? <>
+						<p>Saved files are preserved. Check your connection and retry.</p>
+						<button type = "button" onClick = {retryStartup}>Retry PHP startup</button>
+					</> : <img
 						className = "loader-icon"
 						src = {loader}
 						alt = "loading spinner"
-					/>
+					/>}
 				</div>
 			</div>
 		</div>

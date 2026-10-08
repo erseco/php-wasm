@@ -1,0 +1,40 @@
+# Select with ENV_FILE, or include this file from a custom .env/.php-wasm-rc.
+# BUILD_WORKSPACE is shared Make machinery; BUILD_WORKSPACE= opts into a caller-
+# managed clean checkout. Artifact-only tests do not prepare native workspaces.
+BUILD_WORKSPACE ?= $(if $(filter cloudflare-mjs,${MAKECMDGOALS}),$(or ${CLOUDFLARE_CACHE_DIR},${ENV_DIR}/.cache/build),)
+BUILD_WORKSPACE_TARGETS = $(filter-out test-cloudflare,${MAKECMDGOALS})
+BUILD_PACKAGES := vrzno pdo-cfd1 zlib libzip php-cloud-wasm
+MAKE_SHUFFLE :=
+EXTENSION_PACKAGE_DIRS := packages/vrzno packages/pdo-cfd1 packages/zlib packages/libzip
+PHP_DIST_DIR = .cache/cloudflare-raw/php${PHP_VERSION}
+CPU_COUNT ?= 8
+MAIN_MODULE := 0
+ASYNCIFY := 1
+WITH_VRZNO := 1
+WITH_PDO_CFD1 := 1
+EXTRA_CFLAGS := -DWITH_VRZNO=1 -DWITH_PDO_CFD1=1
+WITH_PDO_PGLITE := 0
+WITH_ZLIB := static
+WITH_LIBZIP := static
+LIBZIP_CMAKE_FLAGS := -DENABLE_COMMONCRYPTO=OFF -DENABLE_GNUTLS=OFF -DENABLE_MBEDTLS=OFF -DENABLE_OPENSSL=OFF -DENABLE_BZIP2=OFF -DENABLE_LZMA=OFF -DENABLE_ZSTD=OFF -DBUILD_TOOLS=OFF -DBUILD_REGRESS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOC=OFF
+WITH_LIBXML := 0
+WITH_ONIGURUMA := 0
+WITH_NETWORKING := 0
+NODE_RAW_FS := 0
+PRELOAD_ASSETS :=
+EXTRA_PRE_JS_FILES :=
+WITH_SOURCEMAPS := 0
+PHP_VARIANT :=
+OPTIMIZE := z
+SUB_OPTIMIZE := z
+INITIAL_MEMORY := 64MB
+MAXIMUM_MEMORY := 96MB
+ASSERTIONS := 1
+SYMBOLS := 0
+WITH_BCMATH := 0
+WITH_CALENDAR := 0
+WITH_CTYPE := 1
+WITH_EXIF := 0
+WITH_FILTER := 1
+WITH_SESSION := 1
+WITH_TOKENIZER := 1

@@ -23,13 +23,13 @@ microdata:
     isBasedOn: php
     isFamilyFriendly: true
     keywords: php, javascript, webassembly
-    license: https://www.apache.org/licenses/LICENSE-2.0.txt
+    license: https://php-wasm.seanmorr.is/LICENSE.html
     maintainer: Sean Morris
     additionalType: https://schema.org/ComputerLanguage
 ---
 <!--
-Vendored from php-wasm-site commit 73d20fb6d1c1dce8519354e821761f60df4c220c
-Source: https://github.com/seanmorris/php-wasm-site/blob/73d20fb6d1c1dce8519354e821761f60df4c220c/pages/index.md
+Vendored from php-wasm-site commit 2ec67be087fe50a57fb296d730f597e0979b6732
+Source: https://github.com/seanmorris/php-wasm-site/blob/2ec67be087fe50a57fb296d730f597e0979b6732/pages/index.md
 Validation refs:
 - https://github.com/seanmorris/php-wasm/blob/a8b1c8953c98c72811e0e4dadd1c95af38a94754/test/docs/report.mjs
 -->
@@ -82,9 +82,9 @@ Extensions can even be loaded from a CDN like jsDelivr or unpkg, since they're w
 
 Write code that runs on the backend, the frontend, the edge and the service worker. You can even include classes directly from Packagist with a cloud-based autoloader.
 
-<p class = "strong">And, of course, its Open Source.</p>
+<p class = "strong">And, of course, it's Open Source.</p>
 
-Php Wasm is published 100% for free under the Apache License, Version 2.0. This means Php Wasm is and always will be 100% free. Php Wasm is committed to maintaining the free and open nature of the web, and all the tools the project is based on.
+Php Wasm is published 100% for free, dual licensed under the Apache License, Version 2.0 and the GNU General Public License, Version 2. This means Php Wasm is and always will be 100% free. Php Wasm is committed to maintaining the free and open nature of the web, and all the tools the project is based on.
 
 <p class = "strong">Want to Reach Out?</p>
 

@@ -2,14 +2,16 @@
 WITH_VRZNO?=1
 
 ifeq (${WITH_VRZNO},1)
-VRZNO_BRANCH?=master
+VRZNO_REPOSITORY?=https://github.com/seanmorris/vrzno.git
+VRZNO_REF?=a35c6fec588817bb421aebda2ebe83d48af2e870
 EXTRA_FLAGS+= -D WITH_VRZNO=1
-PHP_CONFIGURE_DEPS+= third_party/php${PHP_VERSION}-src/ext/vrzno/config.m4 # third_party/php${PHP_VERSION}-src/ext/vrzno/vrzno.c
+VRZNO_SOURCE_STAMP=third_party/vrzno/.php-wasm-source.json
+VRZNO_EXTENSION_STAMP=third_party/php${PHP_VERSION}-src/ext/vrzno/.php-wasm-source.json
+PHP_CONFIGURE_DEPS+= ${VRZNO_EXTENSION_STAMP}
 CONFIGURE_FLAGS+= --enable-vrzno
-# PRE_JS_FILES+= third_party/vrzno/lib.js
-DEPENDENCIES+= third_party/vrzno/vrzno.c
-CGI_DEPENDENCIES+= third_party/vrzno/vrzno.c
-DBG_DEPENDENCIES+= third_party/vrzno/vrzno.c
-TEST_LIST+=$(shell ls packages/vrzno/test/*.mjs)
+DEPENDENCIES+= ${VRZNO_EXTENSION_STAMP}
+CLI_DEPENDENCIES+= ${VRZNO_EXTENSION_STAMP}
+CGI_DEPENDENCIES+= ${VRZNO_EXTENSION_STAMP}
+DBG_DEPENDENCIES+= ${VRZNO_EXTENSION_STAMP}
+TEST_LIST+=$(wildcard packages/vrzno/test/*.mjs)
 endif
-

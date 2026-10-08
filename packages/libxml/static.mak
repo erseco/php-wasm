@@ -54,12 +54,12 @@ third_party/libxml2/.gitignore:
 lib/lib/libxml2.a: third_party/libxml2/.gitignore
 	@ echo -e "\e[33;4mBuilding LibXML2\e[0m"
 	${DOCKER_RUN_IN_LIBXML} ./autogen.sh
-	${DOCKER_RUN_IN_LIBXML} emconfigure ./configure --with-http=no --with-ftp=no --with-python=no --with-threads=no --prefix=/src/lib/ --cache-file=/tmp/config-cache
+	${DOCKER_RUN_IN_LIBXML} emconfigure ./configure --with-http=no --with-ftp=no --with-python=no --with-threads=no --disable-shared --enable-static --prefix=/src/lib/ --cache-file=/tmp/config-cache
 	${DOCKER_RUN_IN_LIBXML} emmake make -j${CPU_COUNT}
 	${DOCKER_RUN_IN_LIBXML} emmake make install
 
 lib/lib/libxml2.so: lib/lib/libxml2.a
-	${DOCKER_RUN_IN_LIBZIP} emcc -shared -o /src/$@ -fPIC -flto -sSIDE_MODULE=1 -O${SUB_OPTIMIZE} -Wl,--whole-archive /src/$^
+	${DOCKER_RUN_IN_LIBZIP} emcc -shared -o /src/$@ -fPIC -flto ${SIDE_MODULE_FLAGS} -O${SUB_OPTIMIZE} -Wl,--whole-archive /src/$^
 
 packages/libxml/libxml2.so: lib/lib/libxml2.so
 	cp -L $^ $@
@@ -74,8 +74,8 @@ packages/libxml/php${PHP_VERSION}-libxml.so: ${PHPIZE} packages/libxml/libxml2.s
 	${DOCKER_RUN_IN_EXT_LIBXML} cp config0.m4 config.m4
 	${DOCKER_RUN_IN_EXT_LIBXML} chmod +x /src/third_party/php${PHP_VERSION}-src/scripts/phpize;
 	${DOCKER_RUN_IN_EXT_LIBXML} /src/third_party/php${PHP_VERSION}-src/scripts/phpize;
-	${DOCKER_RUN_IN_EXT_LIBXML} emconfigure ./configure PKG_CONFIG_PATH=${PKG_CONFIG_PATH} --prefix='/src/lib/php${PHP_VERSION}' --with-php-config=/src/lib/php${PHP_VERSION}/bin/php-config --cache-file=/tmp/config-cache --with-libxml=/src/lib;
+	${DOCKER_RUN_IN_EXT_LIBXML} emconfigure ./configure PKG_CONFIG_PATH=${PKG_CONFIG_PATH} ${PHP_CONFIGURE_VARS} --prefix='/src/lib/php${PHP_VERSION}' --with-php-config=/src/lib/php${PHP_VERSION}/bin/php-config --cache-file=/tmp/config-cache --with-libxml=/src/lib;
 	${DOCKER_RUN_IN_EXT_LIBXML} sed -i 's#-shared#-static#g' Makefile;
 	${DOCKER_RUN_IN_EXT_LIBXML} sed -i 's#-export-dynamic##g' Makefile;
 	${DOCKER_RUN_IN_EXT_LIBXML} emmake make -j${CPU_COUNT} EXTRA_INCLUDES='-I/src/third_party/php${PHP_VERSION}-src';
-	${DOCKER_RUN_IN_EXT_LIBXML} emcc -shared -o /src/$@ -fPIC -flto -sSIDE_MODULE=1 -O${SUB_OPTIMIZE} -Wl,--whole-archive .libs/libxml.a /src/packages/libxml/libxml2.so
+	${DOCKER_RUN_IN_EXT_LIBXML} emcc -shared -o /src/$@ -fPIC -flto ${SIDE_MODULE_FLAGS} -O${SUB_OPTIMIZE} -Wl,--whole-archive .libs/libxml.a /src/packages/libxml/libxml2.so

@@ -4,12 +4,13 @@ weight: -1000
 itemtype: schema.org/Class
 microdata:
     name: PhpWasm
-    alternateName: PhpNode
-    alternateName: PhpWeb
+    alternateName:
+        - PhpNode
+        - PhpWeb
 ---
 <!--
-Vendored from php-wasm-site working tree based on commit 842858b6c6158724c05beace20929ba35793ff57
-Source: https://github.com/seanmorris/php-wasm-site/blob/842858b6c6158724c05beace20929ba35793ff57/pages/methods/php-wasm.md
+Vendored from php-wasm-site commit e7dea4386c6099cfc1c0e510e636bb09ec051426
+Source: https://github.com/seanmorris/php-wasm-site/blob/e7dea4386c6099cfc1c0e510e636bb09ec051426/pages/methods/php-wasm.md
 Validation refs:
 - https://github.com/seanmorris/php-wasm/blob/a8b1c8953c98c72811e0e4dadd1c95af38a94754/test/docs/report.mjs
 - https://github.com/seanmorris/php-wasm/blob/a8b1c8953c98c72811e0e4dadd1c95af38a94754/source/PhpBase.mjs
@@ -22,9 +23,11 @@ Validation refs:
 The concrete `php-wasm` classes all extend the same base runtime API:
 
 - `PhpWeb`
+- `PhpWorker`
+- `PhpWebview`
 - `PhpNode`
 
-Both accept the same core options bucket, with different defaults for binary loading and filesystem persistence depending on environment.
+They accept the same core options bucket, with different defaults for binary loading and filesystem persistence depending on environment.
 
 ### Common constructor options
 
@@ -32,21 +35,36 @@ Both accept the same core options bucket, with different defaults for binary loa
 
 *string*
 
-Selects the PHP runtime version to load. The current defaults in `source/` are `8.4` for `PhpWeb` and `PhpNode`.
+Selects the PHP runtime version to load. Defaults to `8.4`. `PhpNode` instead
+uses the `PHP_VERSION` environment variable when it names a supported version
+(`8.0`–`8.5`).
 
 ```javascript
 const php = new PhpWeb({version: '8.4'});
 ```
 
-### variant
+### SDL runtime selection
 
-*string*
-
-Optional build suffix appended to the runtime filename.
+Install `php-sdl-wasm` and choose a versioned entry for SDL graphics, input
+and audio. The ordinary `php-wasm` package stays independent of that build.
+The previous `variant: '_sdl'` option is no longer supported.
 
 ```javascript
-const php = new PhpWeb({version: '8.4', variant: '-debug'});
+import {PhpSdl} from 'php-sdl-wasm/php8.4-sdl.mjs';
+
+const php = new PhpSdl({canvas: document.querySelector('canvas')});
 ```
+
+Create the canvas first. See [SDL and OpenGL](/extensions/sdl.html) for the
+package, build options and example controls.
+
+### canvas
+
+*HTMLCanvasElement*
+
+Pass the canvas used by an SDL-enabled browser runtime. The cube example needs
+WebGL2 and a focusable canvas (`tabindex="0"`) for keyboard input. Pass a fresh
+canvas when replacing the runtime or switching graphics context types.
 
 ### sharedLibs
 
@@ -58,7 +76,7 @@ Loads shared extensions before boot and writes `extension=...` lines for any ite
 const php = new PhpWeb({
   sharedLibs: [
     { url: 'https://unpkg.com/php-wasm-sqlite/php8.4-sqlite.so', ini: true },
-    { url: 'https://unpkg.com/php-wasm-sqlite/sqlite.so', ini: false },
+    { url: 'https://unpkg.com/php-wasm-sqlite/libsqlite3.so', ini: false },
   ]
 });
 ```
@@ -212,7 +230,7 @@ All `PhpBase` implementations also expose the queued helper methods below:
 - `php.inputString(string)`
 - `php.input(bytes)`
 - `php.analyzePath(path)`
-- `php.readdir(path)`
+- `php.readdir(path, options?)`
 - `php.readFile(path, options)`
 - `php.stat(path)`
 - `php.mkdir(path)`
@@ -222,3 +240,9 @@ All `PhpBase` implementations also expose the queued helper methods below:
 - `php.unlink(path)`
 
 These methods run through the same queueing and transaction logic as `run`, `exec`, `r`, and `x`.
+
+`readdir` returns `string[]` by default. With `{withFileTypes: true}`, it returns
+`Array<{name: string, isFolder: boolean}>`. Both forms include `.` and `..`;
+classification follows links and metadata errors reject the call. See
+[Filesystem Operations](/filesystem/fs-operations.html#php.readdir) and
+[Transactions](/filesystem/transactions.html) for persistence behavior.

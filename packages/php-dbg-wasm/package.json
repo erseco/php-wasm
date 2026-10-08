@@ -1,41 +1,95 @@
 {
   "name": "php-dbg-wasm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "phpdbg for wasm.",
   "main": "./PhpDbgNode.js",
   "module": "./PhpDbgNode.mjs",
-  "types": "./PhpDbgNode.d.mts",
+  "types": "./PhpDbgNode.d.cts",
   "exports": {
     ".": {
-      "types": "./PhpDbgNode.d.mts",
-      "import": "./PhpDbgNode.mjs",
-      "require": "./PhpDbgNode.js",
+      "import": {
+        "types": "./PhpDbgNode.d.mts",
+        "default": "./PhpDbgNode.mjs"
+      },
+      "require": {
+        "types": "./PhpDbgNode.d.cts",
+        "default": "./PhpDbgNode.js"
+      },
       "default": "./PhpDbgNode.mjs"
     },
     "./package.json": "./package.json",
     "./PhpDbgNode": {
-      "types": "./PhpDbgNode.d.mts",
-      "import": "./PhpDbgNode.mjs",
-      "require": "./PhpDbgNode.js",
+      "import": {
+        "types": "./PhpDbgNode.d.mts",
+        "default": "./PhpDbgNode.mjs"
+      },
+      "require": {
+        "types": "./PhpDbgNode.d.cts",
+        "default": "./PhpDbgNode.js"
+      },
       "default": "./PhpDbgNode.mjs"
     },
     "./PhpDbgWeb": {
-      "types": "./PhpDbgWeb.d.mts",
-      "import": "./PhpDbgWeb.mjs",
-      "require": "./PhpDbgWeb.js",
+      "import": {
+        "types": "./PhpDbgWeb.d.mts",
+        "default": "./PhpDbgWeb.mjs"
+      },
+      "require": {
+        "types": "./PhpDbgWeb.d.cts",
+        "default": "./PhpDbgWeb.js"
+      },
       "default": "./PhpDbgWeb.mjs"
     },
     "./*.mjs": "./*.mjs",
     "./*.js": "./*.js",
     "./*.data": "./*.data",
-    "./*.wasm": "./*.wasm"
+    "./*.wasm": "./*.wasm",
+    "./PhpBase": {
+      "import": {
+        "types": "./PhpBase.d.mts",
+        "default": "./PhpBase.mjs"
+      },
+      "require": {
+        "types": "./PhpBase.d.cts",
+        "default": "./PhpBase.js"
+      },
+      "default": "./PhpBase.mjs"
+    },
+    "./PhpBase.mjs": {
+      "types": "./PhpBase.d.mts",
+      "default": "./PhpBase.mjs"
+    },
+    "./PhpBase.js": {
+      "types": "./PhpBase.d.cts",
+      "default": "./PhpBase.js"
+    },
+    "./PhpDbgNode.mjs": {
+      "types": "./PhpDbgNode.d.mts",
+      "default": "./PhpDbgNode.mjs"
+    },
+    "./PhpDbgNode.js": {
+      "types": "./PhpDbgNode.d.cts",
+      "default": "./PhpDbgNode.js"
+    },
+    "./PhpDbgWeb.mjs": {
+      "types": "./PhpDbgWeb.d.mts",
+      "default": "./PhpDbgWeb.mjs"
+    },
+    "./PhpDbgWeb.js": {
+      "types": "./PhpDbgWeb.d.cts",
+      "default": "./PhpDbgWeb.js"
+    },
+    "./public": {
+      "types": "./public.d.ts",
+      "default": "./public.d.ts"
+    }
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/seanmorris/php-wasm.git"
   },
   "author": "Sean Morris <php-wasm@seanmorr.is>",
-  "license": "Apache-2.0",
+  "license": "(Apache-2.0 OR GPL-2.0-only)",
   "contributors": [
     {
       "name": "Sean Morris",
@@ -44,7 +98,7 @@
     }
   ],
   "dependencies": {
-    "php-wasm": "^0.1.0"
+    "php-wasm": "^0.2.0"
   },
   "scripts": {
     "postpublish": "ls *.mjs *.js *.wasm *.data | while read FILENAME; do echo -n \"curl -X PURGE $FILENAME ... \";  curl -X PURGE https://cdn.jsdelivr.net/npm/php-dbg-wasm/$FILENAME; echo; done;"
@@ -66,6 +120,8 @@
     "NOTICE",
     "README.md",
     "package.json",
-    "*.d.ts"
+    "*.d.ts",
+    "*.d.cts",
+    "LICENSE-GPL"
   ]
 }

@@ -1,5 +1,5 @@
 import { PhpBase } from './PhpBase.mjs';
-import { commitTransaction, startTransaction } from './webTransactions.mjs';
+import { commitTransaction, requestWebLock, startTransaction } from './webTransactions.mjs';
 
 const NUM = 'number';
 const STR = 'string';
@@ -68,7 +68,9 @@ export class PhpCliWeb extends PhpBase
 		this.binary = this.binary.then((php) => {
 			php.inputDataQueue = [];
 			php.awaitingInput = null;
-			php.triggerStdin = () => this.dispatchEvent(new CustomEvent('stdin-request'));
+			php.triggerStdin = prompt => this.dispatchEvent(new CustomEvent('stdin-request', {
+				detail: {prompt: prompt ?? null}
+			}));
 			this.addEventListener('stdin-request', async () => this.flush());
 			return php;
 		});
@@ -161,17 +163,19 @@ export class PhpCliWeb extends PhpBase
 			return loc;
 		});
 
-		const arLoc = php._malloc(4 * ptrs.length);
+		const arLoc = php._malloc(4 * (ptrs.length + 1));
 
 		for(const [i, ptr] of ptrs.entries())
 		{
 			php.setValue(arLoc + 4 * i, ptr, '*');
 		}
 
+		php.setValue(arLoc + 4 * ptrs.length, 0, '*');
+
 		try
 		{
 			return await php.ccall(
-				'main'
+				'wasm_sapi_cli_main'
 				, NUM
 				, [NUM, NUM]
 				, [ptrs.length, arLoc]
@@ -180,12 +184,12 @@ export class PhpCliWeb extends PhpBase
 		}
 		catch(error)
 		{
-			// if(!('status' in error ) || error.status !== 0)
-			// {
-			// 	throw error;
-			// }
+			if(typeof error?.status === 'number')
+			{
+				return error.status;
+			}
 
-			return error.status;
+			throw error;
 		}
 		finally
 		{
@@ -233,7 +237,7 @@ export class PhpCliWeb extends PhpBase
 
 		this.queue.push([callback, params, _accept, _reject]);
 
-		navigator.locks.request('php-wasm-fs-lock', async () => {
+		requestWebLock('php-wasm-fs-lock', async () => {
 			if(!this.queue.length)
 			{
 				return;

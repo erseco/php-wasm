@@ -10,14 +10,19 @@ const NUM = 'number';
 const normalizeRuntimeModule = runtime => runtime && typeof runtime === 'object' && 'default' in runtime
 	? runtime
 	: {default: runtime};
+const instantiateRuntimeModule = (Runtime, args) => /^class\s/.test(Function.prototype.toString.call(Runtime))
+	? new Runtime(args)
+	: Runtime(args);
 
 /**
  * Base PHP runtime wrapper shared by the environment-specific adapters.
  */
 export class PhpBase extends EventTarget
 {
-	/** @type {Array<[PhpQueuedCallback, PhpQueueParams, PhpQueueResolve, PhpQueueReject]>} */
+	/** @type {Array<[PhpQueuedCallback, PhpQueueParams, PhpQueueResolve, PhpQueueReject, boolean?]>} */
 	queue;
+	/** @type {boolean} */
+	_queueActive = false;
 	/** @type {(event?: Event) => void} */
 	onerror;
 	/** @type {(event?: Event) => void} */
@@ -34,8 +39,7 @@ export class PhpBase extends EventTarget
 	transactionStarted;
 	/** @type {string|undefined} */
 	phpVersion;
-	/** @type {string|undefined} */
-	phpVariant;
+
 	/** @type {{[key: string]: PhpSharedValue}} */
 	shared;
 	/** @type {PhpRuntimeArgs} */
@@ -47,11 +51,12 @@ export class PhpBase extends EventTarget
 
 	/**
 	 * Creates a PHP runtime wrapper for a specific module loader and SAPI.
-	 * @param {Promise<{default: new (args: object) => object}|(new (args: object) => object)>} phpBinLoader Deferred PHP module loader.
+	 * @param {Promise<PhpModuleFactory|PhpRuntimeFactory>} phpBinLoader Deferred PHP factory or constructor loader.
 	 * @param {PhpRuntimeArgs} args Runtime configuration for the PHP instance.
 	 * @param {string} sapi SAPI identifier to initialize inside the module.
+	 * @param {PhpRuntimeArgs} phpSettings Optional environment-specific replacement for global settings.
 	 */
-	constructor(phpBinLoader, args = {}, sapi = 'embed')
+	constructor(phpBinLoader, args = {}, sapi = 'embed', phpSettings = globalThis.phpSettings ?? {})
 	{
 		super();
 
@@ -74,7 +79,15 @@ export class PhpBase extends EventTarget
 		this.transactionStarted = false;
 
 		this.phpVersion = args.version;
-		this.phpVariant = args.variant;
+		if(args.variant !== undefined && args.variant !== '')
+		{
+			throw new TypeError('Runtime variants have moved to separate packages. Install php-sdl-wasm and import PhpSdl for SDL.');
+		}
+
+		args.ENV = {
+			...(args.ENV ?? {}),
+			...(this.phpVersion ? {PHP_VERSION: this.phpVersion} : {}),
+		};
 
 		this.shared = args.shared = ('shared' in args) ? args.shared : {};
 
@@ -93,7 +106,6 @@ export class PhpBase extends EventTarget
 		};
 
 		const fixed = { onRefresh: new Set };
-		const phpSettings = globalThis.phpSettings ?? {};
 		const userLocateFile = args.locateFile || (() => undefined);
 
 		const files = args.files || [];
@@ -129,7 +141,7 @@ export class PhpBase extends EventTarget
 
 		const phpArgs = Object.assign({}, defaults, phpSettings, args, fixed);
 
-		this.binary = phpBinLoader.then(normalizeRuntimeModule).then(({default: PHP}) => new PHP(phpArgs)).then(async php => {
+		this.binary = phpBinLoader.then(normalizeRuntimeModule).then(({default: PHP}) => instantiateRuntimeModule(PHP, phpArgs)).then(async php => {
 			await php.ccall(
 				'pib_storage_init'
 				, NUM
@@ -267,33 +279,74 @@ export class PhpBase extends EventTarget
 	 * @param {boolean} readOnly Indicates whether the queued operation mutates the filesystem.
 	 * @returns {Promise<PhpRuntimeValue>} Resolves with the queued callback result.
 	 */
-	async _enqueue(callback, params = [], readOnly = false)
+	_enqueue(callback, params = [], readOnly = false)
 	{
-		let accept, reject;
+		return new Promise((accept, reject) => {
+			this.queue.push([callback, params, accept, reject, readOnly]);
 
-		const coordinator = new Promise((a,r) => [accept, reject] = [a, r]);
+			if(!this._queueActive)
+			{
+				this._queueActive = true;
+				void this._drainQueue();
+			}
+		});
+	}
 
-		const _accept = result => accept(result);
-		const _reject = reason => reject(reason);
-
-		this.queue.push([callback, params, _accept, _reject]);
-
-		if(!this.queue.length)
+	/**
+	 * Runs queued operations serially, including their filesystem transactions.
+	 * @returns {Promise<void>} Resolves once all queued operations have settled.
+	 */
+	async _drainQueue()
+	{
+		try
 		{
-			return;
+			while(this.queue.length)
+			{
+				const [callback, params, accept, reject, readOnly = false] = this.queue.shift();
+				let transactionStarted = false;
+				let result, failure;
+				let failed = false;
+
+				try
+				{
+					if(this.autoTransaction)
+					{
+						// Read-only work also needs the transaction's initial FS sync.
+						await this.startTransaction();
+						transactionStarted = true;
+					}
+
+					result = await callback(...params);
+				}
+				catch(error)
+				{
+					failure = error;
+					failed = true;
+				}
+
+				if(transactionStarted)
+				{
+					try
+					{
+						await this.commitTransaction(readOnly);
+					}
+					catch(error)
+					{
+						failure = failed
+							? new AggregateError([failure, error], 'PHP operation and transaction commit failed')
+							: error;
+						failed = true;
+					}
+				}
+
+				if(failed) reject(failure);
+				else accept(result);
+			}
 		}
-
-		await (this.autoTransaction && !readOnly) ? this.startTransaction() : Promise.resolve();
-
-		while(this.queue.length)
+		finally
 		{
-			const [callback, params, accept, reject] = this.queue.shift();
-			await callback(...params).then(accept).catch(reject);
+			this._queueActive = false;
 		}
-
-		await this.autoTransaction ? this.commitTransaction(readOnly) : Promise.resolve();
-
-		return coordinator;
 	}
 
 	/**
@@ -321,12 +374,19 @@ export class PhpBase extends EventTarget
 	 */
 	_run(phpCode)
 	{
+		const source = `${phpCode}`;
+		// Starting eval in PHP mode avoids an artificial inline-HTML statement
+		// before strict_types or a namespace. Keep source line and column offsets.
+		const code = /^<\?php(?=[ \t\r\n]|$)/i.test(source)
+			? `     ${source.slice(5)}`
+			: `?>${source}`;
 		return this.binary.then(php => {
 			return php.ccall(
 				'pib_run'
 				, NUM
 				, [STR]
-				, [`?>${phpCode}`]
+				, [code]
+				, {async: true}
 			);
 		})
 		.finally(() => this.flush());
@@ -357,15 +417,20 @@ export class PhpBase extends EventTarget
 	 */
 	async _exec(phpCode)
 	{
-		const call = (await this.binary).ccall(
-			'pib_exec'
-			, STR
-			, [STR]
-			, [phpCode]
-			, {async: true}
-		);
-
-		return call.finally(() => this.flush());
+		try
+		{
+			return await (await this.binary).ccall(
+				'pib_exec'
+				, STR
+				, [STR]
+				, [phpCode]
+				, {async: true}
+			);
+		}
+		finally
+		{
+			this.flush();
+		}
 	}
 
 	/**
@@ -400,7 +465,7 @@ export class PhpBase extends EventTarget
 
 			code = `vrzno_zval( ${code} );`;
 
-			return phpModule.zvalToJS(await this.exec(code));
+			return phpModule.consumeZval(await this.exec(code));
 		}
 		else
 		{
@@ -522,11 +587,12 @@ export class PhpBase extends EventTarget
 	/**
 	 * Lists a directory in the virtual filesystem.
 	 * @param {string} path Directory path to list.
+	 * @param {{withFileTypes?: boolean}} [options] Include serializable entry types.
 	 * @returns {Promise<PhpRuntimeValue>} Directory entries for the path.
 	 */
-	readdir(path)
+	readdir(path, options)
 	{
-		return this._enqueue(fsOps.readdir, [this.binary, path]);
+		return this._enqueue(fsOps.readdir, [this.binary, path, options]);
 	}
 
 	/**

@@ -4,6 +4,7 @@
 /* global __DEMO_BUILD_TYPE__, __DEMO_LIB_TYPE__ */
 import { PhpCgiWorker } from 'php-cgi-wasm/PhpCgiWorker.mjs';
 import { PGlite } from '@electric-sql/pglite';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import Dom from 'php-wasm-dom';
 import Gd from 'php-wasm-gd';
 import Iconv from 'php-wasm-iconv';
@@ -12,6 +13,7 @@ import Libxml from 'php-wasm-libxml';
 import Libzip from 'php-wasm-libzip';
 import Mbstring from 'php-wasm-mbstring';
 import Openssl from 'php-wasm-openssl';
+import Phar from 'php-wasm-phar';
 import Simplexml from 'php-wasm-simplexml';
 import Sqlite from 'php-wasm-sqlite';
 import Tidy from 'php-wasm-tidy';
@@ -22,6 +24,9 @@ import Yaml from 'php-wasm-yaml';
 import Zlib from 'php-wasm-zlib';
 import { basePath } from '../lib/runtimePaths.worker.js';
 import { sharedSupportLibs } from 'demo-web-shared-support-libs';
+import { coordinateDemoDatabase, withDemoDatabaseLock } from '../lib/demoDatabaseRuntime.worker.js';
+import { createWorkbenchActions } from '../lib/queryWorkbench.worker.js';
+import { createEditorFilesystemActions } from '../lib/editorFilesystem.worker.js';
 
 const sharedLibs = [];
 const workerLibType = typeof __DEMO_LIB_TYPE__ !== 'undefined'
@@ -36,6 +41,7 @@ const dynamicSupportLibs = [
 	, Iconv
 	, Intl
 	, Openssl
+	, Phar
 	, Mbstring
 	, Sqlite
 	, Xml
@@ -57,7 +63,35 @@ const files = [
 	{ parent: '/preload/test_www/', name: 'hello-world.php',     url: './scripts/hello-world.php' }
 	, { parent: '/preload/test_www/', name: 'phpinfo.php',         url: './scripts/phpinfo.php' }
 	, { parent: '/preload/',          name: 'list-extensions.php', url: './scripts/list-extensions.php' }
+	, { parent: '/preload/query-workbench/', name: 'query-workbench.php', url: './scripts/query-workbench.php' }
 ];
+const cgiPrefix = basePath('cgi-bin/');
+const excludedFetchPrefixes = [basePath('cgi-bin/~!@'), basePath('cgi-bin/.')];
+
+class DemoPGlite extends PGlite
+{
+	constructor(dataDir, options = {})
+	{
+		super(dataDir, {
+			...options
+			, extensions: {
+				pg_trgm
+				, ...options.extensions
+			}
+		});
+	}
+}
+
+/**
+ * Returns true only for requests that should wake the PHP-CGI runtime.
+ */
+const shouldHandleFetch = request => {
+	const url = new URL(request.url);
+
+	return url.origin === self.location.origin
+		&& url.pathname.startsWith(cgiPrefix)
+		&& !excludedFetchPrefixes.some(prefix => url.pathname.startsWith(prefix));
+};
 
 /**
  * Emits an access-log style line for each handled CGI request.
@@ -71,6 +105,19 @@ const onRequest = (request, response) => {
 	console.log(logLine);
 };
 
+const withPGlite = async (database, callback) => {
+	const pglite = new DemoPGlite(database);
+
+	try
+	{
+		return await callback(pglite);
+	}
+	finally
+	{
+		await pglite.close();
+	}
+};
+
 /**
  * Returns a simple HTML 404 response for unmatched worker routes.
  */
@@ -82,24 +129,34 @@ const notFound = request => {
 };
 
 const actions = {
-	runSql: (php, database, sql) => {
-		console.log({database});
-		const pglite = new PGlite(database);
-		return pglite.query(sql);
+	runtimeReady: () => true
+	, awaitFilesystem: () => navigator.locks.request(
+		'php-wasm-fs-lock'
+		, () => true
+	)
+	, runSql: (php, database, sql) => {
+		return withDemoDatabaseLock(() => withPGlite(database, pglite => pglite.query(sql)));
 	}
-	, execSql: (php, database, sql) => {
-		console.log({database});
-		const pglite = new PGlite(database);
-		return pglite.exec(sql);
+	, replaceSql: (php, database, sql) => {
+		return withDemoDatabaseLock(() => withPGlite(database, pglite => pglite.exec([
+			'BEGIN;'
+			, 'DROP SCHEMA IF EXISTS public CASCADE;'
+			, 'CREATE SCHEMA public;'
+			, sql
+			, 'COMMIT;'
+		].join('\n'))));
 	}
+	, ...createWorkbenchActions({withLock: withDemoDatabaseLock, withPGlite})
+	, ...createEditorFilesystemActions({withLock: withDemoDatabaseLock})
 };
 
 let phpLoader = null;
+const DemoPhpCgiWorker = coordinateDemoDatabase(PhpCgiWorker);
 
 /**
  * Loads the runtime assets required for the current build type and creates the worker.
  */
-const init = async () => {
+const init = () => {
 	if(phpLoader) return phpLoader;
 
 	if(workerLibType === 'dynamic')
@@ -113,24 +170,35 @@ const init = async () => {
 	}
 
 	// Spawn the PHP-CGI binary
-	return phpLoader = new PhpCgiWorker({
+	return phpLoader = new DemoPhpCgiWorker({
 		version: '8.3'
 		, onRequest
 		, notFound
 		, sharedLibs
 		, files
-		, PGlite
+		, PGlite: DemoPGlite
 		, actions
 		, staticFS: false
 		, prefix: basePath('cgi-bin/')
 		, exclude: [basePath('cgi-bin/~!@'), basePath('cgi-bin/.')]
 		, docroot: '/persist/www'
 		, types: {
-			jpeg: 'image/jpeg'
+			avif: 'image/avif'
+			, css: 'text/css; charset=utf-8'
+			, eot: 'application/vnd.ms-fontobject'
+			, ico: 'image/x-icon'
+			, jpeg: 'image/jpeg'
 			, jpg: 'image/jpeg'
 			, gif: 'image/gif'
+			, js: 'text/javascript; charset=utf-8'
+			, json: 'application/json; charset=utf-8'
+			, mjs: 'text/javascript; charset=utf-8'
 			, png: 'image/png'
 			, svg: 'image/svg+xml'
+			, ttf: 'font/ttf'
+			, webp: 'image/webp'
+			, woff: 'font/woff'
+			, woff2: 'font/woff2'
 		}
 		, vHosts: [
 			{
@@ -145,9 +213,16 @@ const init = async () => {
 // Set up the event handlers
 self.addEventListener('install', event => event.waitUntil(globalThis.skipWaiting()));
 self.addEventListener('activate', event => event.waitUntil(globalThis.clients.claim()));
-self.addEventListener('fetch',    async event => (await init()).handleFetchEvent(event));
-self.addEventListener('message',  async event => (await init()).handleMessageEvent(event));
+self.addEventListener('fetch', event => {
+	if(!shouldHandleFetch(event.request))
+	{
+		return;
+	}
+
+	return init().handleFetchEvent(event);
+});
+self.addEventListener('message', event => init().handleMessageEvent(event));
 
 // Extras
 self.addEventListener('install',  () => console.log('Install'));
-self.addEventListener('activate', async() => { await init(); console.log('Activate'); });
+self.addEventListener('activate', () => console.log('Activate'));

@@ -13,9 +13,10 @@ const defaultVersion = /** @type {PhpRuntimeVersion} */ (
 const normalizeRuntimeModule = runtime => runtime && typeof runtime === 'object' && 'default' in runtime
 	? runtime
 	: {default: runtime};
+const isBun = typeof process !== 'undefined' && Boolean(process.versions?.bun);
 
 const loadRuntime = specifier => {
-	if(typeof require === 'function')
+	if(typeof require === 'function' && !isBun)
 	{
 		return Promise.resolve(
 			normalizeRuntimeModule(require(specifier.replace(/\.mjs$/, '.js')))
@@ -113,7 +114,9 @@ export class PhpCliNode extends PhpBase
 		this.binary = this.binary.then((php) => {
 			php.inputDataQueue = [];
 			php.awaitingInput = null;
-			php.triggerStdin = () => this.dispatchEvent(new CustomEvent('stdin-request'));
+			php.triggerStdin = prompt => this.dispatchEvent(new CustomEvent('stdin-request', {
+				detail: {prompt: prompt ?? null}
+			}));
 			this.addEventListener('stdin-request', async () => this.flush());
 			return php;
 		});
@@ -163,7 +166,7 @@ export class PhpCliNode extends PhpBase
 			/**
 			 * Executes queued CLI flags.
 			 * @param {...PhpQueueParam} params Queued CLI flag payload.
-			 * @returns {Promise<number>} Resolves with the CLI execution result.
+			 * @returns {Promise<number|undefined>} Exit status, or undefined for errors without a status.
 			 */
 			(...params) => this._run(/** @type {string[]} */ (params[0] ?? [])),
 			[cliFlags]
@@ -173,7 +176,7 @@ export class PhpCliNode extends PhpBase
 	/**
 	 * Executes the PHP CLI binary with a prepared flag list.
 	 * @param {string[]} flags CLI flags to pass to the PHP process.
-	 * @returns {Promise<number>} Resolves with the PHP process exit status.
+	 * @returns {Promise<number|undefined>} Exit status, or undefined for errors without a status.
 	 */
 	async _run(flags = [])
 	{
@@ -185,17 +188,19 @@ export class PhpCliNode extends PhpBase
 			php.stringToUTF8(part, loc, len);
 			return loc;
 		});
-		const arLoc = php._malloc(4 * ptrs.length);
+		const arLoc = php._malloc(4 * (ptrs.length + 1));
 
 		for(const [index, ptr] of ptrs.entries())
 		{
 			php.setValue(arLoc + 4 * index, ptr, '*');
 		}
 
+		php.setValue(arLoc + 4 * ptrs.length, 0, '*');
+
 		try
 		{
 			return await php.ccall(
-				'main'
+				'wasm_sapi_cli_main'
 				, NUM
 				, [NUM, NUM]
 				, [ptrs.length, arLoc]

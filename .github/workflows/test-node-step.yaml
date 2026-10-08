@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /tmp/builder-image.tar
-          key: ${{ runner.os }}-docker-${{ hashFiles('emscripten-builder.dockerfile') }}
+          key: ${{ runner.os }}-docker-${{ hashFiles('emscripten-builder.dockerfile', 'patch/emscripten-6.0.6.patch', '.github/bin/retry-embuilder.sh', '.github/bin/verify-emscripten-profile-runtime.sh', '.github/bin/verify-emscripten-fibers.sh', '.github/bin/verify-emscripten-async-errors.sh') }}
 
       - name: Load builder image if cached
         if: steps.cache-docker-image.outputs.cache-hit == 'true'
@@ -53,9 +53,17 @@ jobs:
         run: docker compose version
 
       - name: npm install
-        run: |
-          npm ci
-          npm install -g deno@2.5.6
+        run: npm ci
+
+      - name: Install Deno
+        if: ${{ inputs.testType == 'deno' }}
+        run: npm install -g deno@2.5.6
+
+      - name: Install Bun
+        if: ${{ inputs.testType == 'bun' }}
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
 
       - name: Download Artifact
         uses: actions/download-artifact@v8
@@ -84,9 +92,13 @@ jobs:
         run: |
           TARGET=test-${{ inputs.testType }}
 
-          if [ "${{ inputs.testType }}" = "node" ]; then
-            make --debug=basic test-node-standard PHP_VERSION=${{ inputs.phpVersion }} LIB_TYPE=${{ inputs.libType }}
-            make --debug=basic test-node-cjs-standard PHP_VERSION=${{ inputs.phpVersion }} LIB_TYPE=${{ inputs.libType }}
+          if [ "${{ inputs.testType }}" = "node" ] || [ "${{ inputs.testType }}" = "bun" ]; then
+            make --debug=basic ${TARGET}-standard PHP_VERSION=${{ inputs.phpVersion }} LIB_TYPE=${{ inputs.libType }}
+            make --debug=basic ${TARGET}-cjs-standard PHP_VERSION=${{ inputs.phpVersion }} LIB_TYPE=${{ inputs.libType }}
+            if [ "${{ inputs.testType }}" = "bun" ]; then
+              make --debug=basic test-cgi-bun PHP_VERSION=${{ inputs.phpVersion }} LIB_TYPE=${{ inputs.libType }}
+              make --debug=basic test-cgi-bun-cjs PHP_VERSION=${{ inputs.phpVersion }} LIB_TYPE=${{ inputs.libType }}
+            fi
             exit 0
           fi
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env make
 
-${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data: .cache/preload-collected
+${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data: .cache/preload-collected
 	- cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cgi/${PRELOAD_NAME}.data ${PHP_CGI_DIST_DIR}
-	- cp -Lprf ${PHP_CGI_DIST_DIR}/${PRELOAD_NAME}.data ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/
+	- cp -Lprf ${PHP_CGI_DIST_DIR}/${PRELOAD_NAME}.data ${PHP_CGI_ASSET_DIR}/
 
 NOTPARALLEL+=\
 	web-cgi-mjs \
@@ -26,8 +26,8 @@ WORKER_CGI_MJS=$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.mjs PhpCgiWebBase.mjs
 WORKER_CGI_JS=$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.js  PhpCgiWebBase.js  PhpCgiWorker.js php${PHP_SUFFIX}-cgi-worker.js ${CGI_CJS_HELPERS_WEB} ${CJS_HELPERS_WEB})
 WEBVIEW_CGI_MJS=$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.mjs PhpCgiWebBase.mjs PhpCgiWebview.mjs php${PHP_SUFFIX}-cgi-webview.mjs ${CGI_MJS_HELPERS_WEB} ${MJS_HELPERS_WEB})
 WEBVIEW_CGI_JS=$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.js  PhpCgiWebBase.js  PhpCgiWebview.js php${PHP_SUFFIX}-cgi-webview.js ${CGI_CJS_HELPERS_WEB} ${CJS_HELPERS_WEB})
-NODE_CGI_MJS=$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.mjs PhpCgiNode.mjs php${PHP_SUFFIX}-cgi-node.mjs ${CGI_MJS_HELPERS} ${MJS_HELPERS})
-NODE_CGI_JS =$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.js  PhpCgiNode.js php${PHP_SUFFIX}-cgi-node.js ${CGI_CJS_HELPERS} ${CJS_HELPERS})
+NODE_CGI_MJS=$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.mjs PhpCgiNode.mjs php${PHP_SUFFIX}-cgi-node.mjs ${CGI_MJS_HELPERS} ${MJS_HELPERS} webTransactions.mjs)
+NODE_CGI_JS =$(addprefix ${PHP_CGI_DIST_DIR}/,PhpCgiBase.js  PhpCgiNode.js php${PHP_SUFFIX}-cgi-node.js ${CGI_CJS_HELPERS} ${CJS_HELPERS} webTransactions.js)
 
 WEB_CGI_MJS_ASSETS= $(addprefix ${PHP_CGI_ASSET_DIR}/,${PHP_ASSET_LIST}) ${EXTRA_MODULES} ${HELPER_MJS}
 WEB_CGI_JS_ASSETS= $(addprefix ${PHP_CGI_ASSET_DIR}/,${PHP_ASSET_LIST}) ${EXTRA_MODULES}
@@ -39,14 +39,14 @@ NODE_CGI_MJS_ASSETS= $(addprefix ${PHP_CGI_ASSET_DIR}/,${PHP_ASSET_LIST}) ${EXTR
 NODE_CGI_JS_ASSETS= $(addprefix ${PHP_CGI_ASSET_DIR}/,${PHP_ASSET_LIST}) ${EXTRA_MODULES}
 
 ifneq (${PRELOAD_ASSETS},)
-WEB_CGI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
-WEB_CGI_JS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
-WORKER_CGI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
-WORKER_CGI_JS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
-WEBVIEW_CGI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
-WEBVIEW_CGI_JS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
-NODE_CGI_MJS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
-NODE_CGI_JS_ASSETS+= ${ENV_DIR}/${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEB_CGI_MJS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEB_CGI_JS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+WORKER_CGI_MJS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+WORKER_CGI_JS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEBVIEW_CGI_MJS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+WEBVIEW_CGI_JS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+NODE_CGI_MJS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
+NODE_CGI_JS_ASSETS+= ${PHP_CGI_ASSET_DIR}/${PRELOAD_NAME}.data
 endif
 
 ifeq (${WITH_SOURCEMAPS},1)
@@ -140,7 +140,7 @@ ifneq (${PRE_JS_FILES},)
 CGI_DEPENDENCIES+= ${PRE_JS_CACHE}
 endif
 
-CGI_DEPENDENCIES+= third_party/php${PHP_VERSION}-src/configured
+CGI_DEPENDENCIES+= third_party/php${PHP_VERSION}-src/configured ${PHP_LINK_DEPS}
 
 ${PHP_CGI_DIST_DIR}/%.js: source/%.mjs
 	npx babel $< --out-dir ${PHP_CGI_DIST_DIR}/
@@ -162,8 +162,7 @@ ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-web.js: ${CGI_DEPENDENCIES} | ${ORDER_O
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cgi/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}* ${PHP_CGI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}.* ${PHP_CGI_ASSET_DIR}
 
 ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-web.js.wasm.map.MAPPED: ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-web.js
@@ -200,8 +199,7 @@ ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-worker.js: ${CGI_DEPENDENCIES} | ${ORDE
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cgi/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}* ${PHP_CGI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}.* ${PHP_CGI_ASSET_DIR}
 
 ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-worker.js.wasm.map.MAPPED: ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-worker.js
@@ -238,8 +236,7 @@ ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-node.js: ${CGI_DEPENDENCIES} | ${ORDER_
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cgi/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}* ${PHP_CGI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}.* ${PHP_CGI_ASSET_DIR}
 
 ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-node.js.wasm.map.MAPPED: ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-node.js
@@ -275,8 +272,7 @@ ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-webview.js: ${CGI_DEPENDENCIES} | ${ORD
 	cp -Lprf third_party/php${PHP_VERSION}-src/sapi/cgi/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}* ${PHP_CGI_DIST_DIR}/
 	perl -pi -w -e 's|import(name)|import(/* webpackIgnore: true */ name)|g' $@
 	perl -pi -w -e 's|require("fs")|require(/* webpackIgnore: true */ "fs")|g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\?\?=#\1=\1??#g' $@
-	perl -pi -w -e 's#([^;{}]+)\s*\|\|=#\1=\1\|\|#g' $@
+	node bin/transform-logical-assignments.mjs $@
 	- cp -Lprf ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-${ENVIRONMENT}.${BUILD_TYPE}.* ${PHP_CGI_ASSET_DIR}
 
 ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-webview.js.wasm.map.MAPPED: ${PHP_CGI_DIST_DIR}/php${PHP_SUFFIX}-cgi-webview.js

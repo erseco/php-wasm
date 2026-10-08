@@ -4,8 +4,8 @@ pagetitle: Documentation Home
 weight: -1000
 ---
 <!--
-Vendored from php-wasm-site commit 73d20fb6d1c1dce8519354e821761f60df4c220c
-Source: https://github.com/seanmorris/php-wasm-site/blob/73d20fb6d1c1dce8519354e821761f60df4c220c/pages/getting-started/home.md
+Vendored from php-wasm-site commit 2ec67be087fe50a57fb296d730f597e0979b6732
+Source: https://github.com/seanmorris/php-wasm-site/blob/2ec67be087fe50a57fb296d730f597e0979b6732/pages/getting-started/home.md
 Validation refs:
 - https://github.com/seanmorris/php-wasm/blob/a8b1c8953c98c72811e0e4dadd1c95af38a94754/test/docs/report.mjs
 -->
@@ -29,6 +29,8 @@ If you'd like to spin up a webserver right in your browser, see [PHP-CGI In Serv
 
 If you'd like to serve websites with Node.js, see [PHP-CGI In Node.js](/getting-started/cgi-in-nodeJs.html).
 
+To run PHP at the edge with Cloudflare Workers or Pages and D1, see [PHP in Cloudflare](/getting-started/php-in-cloudflare.html).
+
 ## Demo
 
 <iframe class="video" src="https://www.youtube.com/embed/rQ-_KMgUtFg?si=mPylUsIqa1FTwSjP" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen>
@@ -36,22 +38,17 @@ If you'd like to serve websites with Node.js, see [PHP-CGI In Node.js](/getting-
 
 ## Nightly Builds
 
-The latest successful nightly artifact build published from GitHub Actions is the `Build Artifacts` workflow run on `develop` from **February 24, 2026**:
-
-- Run `#92`
-- GitHub Actions run ID `22360005357`
-- PHP `8.0`, `8.1`, `8.2`, `8.3`, `8.4`, and `8.5`
-- `static`, `shared`, and `dynamic` library builds
-- Discord: nightly builds are announced in `#nightly-builds`
-
-<https://github.com/seanmorris/php-wasm/actions/runs/22360005357>
+Find successful builds on `develop` in the
+[Build Artifacts workflow](https://github.com/seanmorris/php-wasm/actions/workflows/build.yaml?query=branch%3Adevelop+conclusion%3Asuccess).
+Choose a run and keep its matching JavaScript/Wasm assets together. The ordinary
+matrix covers PHP 8.0–8.5 with static, shared, and dynamic libraries; Cloudflare
+uses its dedicated package and profile. Nightly announcements are posted in
+Discord's `#nightly-builds` channel.
 
 For historical release notes, see the [CHANGELOG](/CHANGELOG.html).
 
-## 🍻 Licensed under the Apache License, Version 2.0
+## 🍻 Dual licensed under the Apache License, Version 2.0 and the GNU GPL, Version 2
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+php-wasm is dual licensed under the [Apache License, Version 2.0](/LICENSE.html) and the [GNU General Public License, Version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html); you may use it under the terms of either license.
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
-
-http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software distributed under the Licenses is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the Licenses for the specific language governing permissions and limitations under the Licenses.

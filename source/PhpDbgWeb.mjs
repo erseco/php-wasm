@@ -1,5 +1,5 @@
 import { PhpBase } from './PhpBase.mjs';
-import { commitTransaction, startTransaction } from './webTransactions.mjs';
+import { commitTransaction, requestWebLock, startTransaction } from './webTransactions.mjs';
 
 const NUM = 'number';
 const STR = 'string';
@@ -59,7 +59,9 @@ export class PhpDbgWeb extends PhpBase
 		this.binary = this.binary.then((php) => {
 			php.inputDataQueue = [];
 			php.awaitingInput = null;
-			php.triggerStdin = () => this.dispatchEvent(new CustomEvent('stdin-request'));
+			php.triggerStdin = prompt => this.dispatchEvent(new CustomEvent('stdin-request', {
+				detail: {prompt: prompt ?? null}
+			}));
 			return php;
 		});
 	}
@@ -134,17 +136,19 @@ export class PhpDbgWeb extends PhpBase
 			return loc;
 		});
 
-		const arLoc = php._malloc(4 * ptrs.length);
+		const arLoc = php._malloc(4 * (ptrs.length + 1));
 
 		for(const [i, ptr] of ptrs.entries())
 		{
 			php.setValue(arLoc + 4 * i, ptr, '*');
 		}
 
+		php.setValue(arLoc + 4 * ptrs.length, 0, '*');
+
 		try
 		{
 			const process = php.ccall(
-				'main'
+				'wasm_sapi_phpdbg_main'
 				, NUM
 				, [NUM, NUM]
 				, [ptrs.length, arLoc]
@@ -334,8 +338,8 @@ export class PhpDbgWeb extends PhpBase
 	 */
 	dumpSymbols(ptr, php)
 	{
-		const heap = new DataView(php.HEAP8.buffer);
-		const end = ptr + heap.getInt32(ptr, true);
+		const heap = new DataView(php.HEAPU8.buffer);
+		const end = ptr + heap.getUint32(ptr, true);
 		const pointerLen = 4;
 
 		let cur = ptr + pointerLen;
@@ -344,13 +348,13 @@ export class PhpDbgWeb extends PhpBase
 
 		while(cur < end)
 		{
-			const zv = heap.getInt32(cur, true);
+			const zv = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const nameLen = heap.getInt32(cur, true);
+			const nameLen = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const name = dec.decode(php.HEAP8.slice(cur, cur + nameLen));
+			const name = dec.decode(php.HEAPU8.slice(cur, cur + nameLen));
 			cur += nameLen + 1;
 
 			symbols[name] = php.zvalToJS(zv);
@@ -377,8 +381,8 @@ export class PhpDbgWeb extends PhpBase
 			, {}
 		);
 
-		const heap = new DataView(php.HEAP8.buffer);
-		const end = ptr + heap.getInt32(ptr, true);
+		const heap = new DataView(php.HEAPU8.buffer);
+		const end = ptr + heap.getUint32(ptr, true);
 		const pointerLen = 4;
 
 		let cur = ptr + pointerLen;
@@ -387,19 +391,19 @@ export class PhpDbgWeb extends PhpBase
 
 		while(cur < end)
 		{
-			const filenameLen = heap.getInt32(cur, true);
+			const filenameLen = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const filename = dec.decode(php.HEAP8.slice(cur, cur + filenameLen));
+			const filename = dec.decode(php.HEAPU8.slice(cur, cur + filenameLen));
 			cur += filenameLen + 1;
 
-			const lineNo = heap.getInt32(cur, true);
+			const lineNo = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const nameLen = heap.getInt32(cur, true);
+			const nameLen = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const name = dec.decode(php.HEAP8.slice(cur, cur + nameLen));
+			const name = dec.decode(php.HEAPU8.slice(cur, cur + nameLen));
 			cur += nameLen + 1;
 
 			functions[name] = {name, filename, lineNo};
@@ -426,8 +430,8 @@ export class PhpDbgWeb extends PhpBase
 			, {}
 		);
 
-		const heap = new DataView(php.HEAP8.buffer);
-		const end = ptr + heap.getInt32(ptr, true);
+		const heap = new DataView(php.HEAPU8.buffer);
+		const end = ptr + heap.getUint32(ptr, true);
 		const pointerLen = 4;
 
 		let cur = ptr + pointerLen;
@@ -436,19 +440,19 @@ export class PhpDbgWeb extends PhpBase
 
 		while(cur < end)
 		{
-			const filenameLen = heap.getInt32(cur, true);
+			const filenameLen = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const filename = dec.decode(php.HEAP8.slice(cur, cur + filenameLen));
+			const filename = dec.decode(php.HEAPU8.slice(cur, cur + filenameLen));
 			cur += filenameLen + 1;
 
-			const lineNo = heap.getInt32(cur, true);
+			const lineNo = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const nameLen = heap.getInt32(cur, true);
+			const nameLen = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const name = dec.decode(php.HEAP8.slice(cur, cur + nameLen));
+			const name = dec.decode(php.HEAPU8.slice(cur, cur + nameLen));
 			cur += nameLen + 1;
 
 			functions[name] = {name, filename, lineNo};
@@ -475,8 +479,8 @@ export class PhpDbgWeb extends PhpBase
 			, {}
 		);
 
-		const heap = new DataView(php.HEAP8.buffer);
-		const end = ptr + heap.getInt32(ptr, true);
+		const heap = new DataView(php.HEAPU8.buffer);
+		const end = ptr + heap.getUint32(ptr, true);
 		const pointerLen = 4;
 
 		let cur = ptr + pointerLen;
@@ -485,10 +489,10 @@ export class PhpDbgWeb extends PhpBase
 
 		while(cur < end)
 		{
-			const filenameLen = heap.getInt32(cur, true);
+			const filenameLen = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const filename = dec.decode(php.HEAP8.slice(cur, cur + filenameLen));
+			const filename = dec.decode(php.HEAPU8.slice(cur, cur + filenameLen));
 			cur += filenameLen + 1;
 
 			files.push(filename);
@@ -515,8 +519,8 @@ export class PhpDbgWeb extends PhpBase
 			, {}
 		);
 
-		const heap = new DataView(php.HEAP8.buffer);
-		const end = ptr + heap.getInt32(ptr, true);
+		const heap = new DataView(php.HEAPU8.buffer);
+		const end = ptr + heap.getUint32(ptr, true);
 		const pointerLen = 4;
 
 		let cur = ptr + pointerLen;
@@ -527,13 +531,13 @@ export class PhpDbgWeb extends PhpBase
 
 		while(cur < end)
 		{
-			const filenameLen = heap.getInt32(cur, true);
+			const filenameLen = heap.getUint32(cur, true);
 			cur += pointerLen;
 
-			const filename = dec.decode(php.HEAP8.slice(cur, cur + filenameLen));
+			const filename = dec.decode(php.HEAPU8.slice(cur, cur + filenameLen));
 			cur += filenameLen + 1;
 
-			const lineNo = heap.getInt32(cur, true);
+			const lineNo = heap.getUint32(cur, true);
 			cur += pointerLen;
 
 			frames.push({filename, lineNo, frame: i});
@@ -602,7 +606,7 @@ export class PhpDbgWeb extends PhpBase
 
 		this.queue.push([callback, params, _accept, _reject]);
 
-		navigator.locks.request('php-wasm-fs-lock', async () => {
+		requestWebLock('php-wasm-fs-lock', async () => {
 			if(!this.queue.length)
 			{
 				return;

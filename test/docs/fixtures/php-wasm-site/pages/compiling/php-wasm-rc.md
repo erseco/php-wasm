@@ -2,8 +2,8 @@
 title: .php-wasm-rc
 ---
 <!--
-Vendored from php-wasm-site commit 73d20fb6d1c1dce8519354e821761f60df4c220c
-Source: https://github.com/seanmorris/php-wasm-site/blob/73d20fb6d1c1dce8519354e821761f60df4c220c/pages/compiling/php-wasm-rc.md
+Vendored from php-wasm-site commit 8e01c217a591125c668f5639595b554af1593e47
+Source: https://github.com/seanmorris/php-wasm-site/blob/8e01c217a591125c668f5639595b554af1593e47/pages/compiling/php-wasm-rc.md
 Validation refs:
 - https://github.com/seanmorris/php-wasm/blob/a8b1c8953c98c72811e0e4dadd1c95af38a94754/test/docs/report.mjs
 - https://github.com/seanmorris/php-wasm/blob/a8b1c8953c98c72811e0e4dadd1c95af38a94754/Makefile
@@ -32,9 +32,17 @@ PHP_CGI_DIST_DIR=./public
 # Build the cgi package's extensions to a directory other than the current one (RELATIVE path)
 PHP_CGI_ASSET_DIR=./public
 
-# Space separated list of files/directories (ABSOLUTE paths)
-# to be included under the /preload directory in the final build.
-PRELOAD_ASSETS=~/path/to/file/php-scripts ~/other-dir/example.php
+# Build the cli package and its extensions to relative output directories
+PHP_CLI_DIST_DIR=./public
+PHP_CLI_ASSET_DIR=./public
+
+# Build the phpdbg package and its extensions to relative output directories
+PHP_DBG_DIST_DIR=./public
+PHP_DBG_ASSET_DIR=./public
+
+# Space separated list of files/directories to include under /preload.
+# Relative paths are resolved from the current project directory.
+PRELOAD_ASSETS=./php-scripts ~/other-dir/example.php
 
 # Memory to start the instance with, before growth
 INITIAL_MEMORY=2048MB
@@ -62,15 +70,22 @@ Use the `PRELOAD_ASSETS` key in your `.php-wasm-rc` file to define a list of fil
 
 The files and directories will be collected into a single directory. Individual files & directories will appear in the top level, while directories will maintain their internal structure.
 
+When you use `php-wasm-builder`, relative entries are resolved from the current project directory. Anchored paths such as `/path/to/file.txt` and `~/path/to/file.txt` are left unprefixed so the shell can resolve them normally.
+
+`PRELOAD_ASSETS` is a whitespace-delimited Make variable. Paths containing spaces are not supported.
+
 These files & directories will be available under `/preload` in the final package, packaged into the `.data` file that is built along with the `.wasm` file.
 
 ```bash
-PRELOAD_ASSETS='/path/to/file.txt /some/directory /path/to/other_file.txt /some/other/directory'
+PRELOAD_ASSETS='./php-scripts /some/directory ~/other-dir/example.php /path/to/other_file.txt'
 ```
 
 ### PHP_VERSION
 
-8.0|8.1|8.2|8.3|8.4|8.5
+8.0|8.1|8.2|8.3|**8.4**|8.5
+
+PHP 8.0 builds must also set `WITH_PDO_PGLITE=0`, because PDO-PGlite requires
+PHP 8.1 or newer.
 
 ---
 
@@ -102,7 +117,7 @@ The optimization level to use while compiling libraries. Defaults to `OPTIMIZE`.
 
 ### ASSERTIONS
 
-0|**1**
+**0**|1
 
 Build with/without assertions.
 
@@ -134,14 +149,14 @@ The following extension may be compiled as static, shared or dynamic:
 
 ```
 WITH_PHAR      # [0, 1, static, dynamic]
-WITH_LIBXML    # [0, 1, static, shared]
+WITH_LIBXML    # [0, 1, static, shared, dynamic]
 WITH_ICONV     # [0, 1, static, shared, dynamic]
 WITH_SQLITE    # [0, 1, static, shared, dynamic]
 
 WITH_LIBZIP    # [0, 1, static, shared, dynamic]
 WITH_ZLIB      # [0, 1, static, shared, dynamic]
 
-WITH_GD        # [0, 1, static, shared, dynamic]
+WITH_GD        # [0, 1, static, dynamic]
 WITH_LIBPNG    # [0, 1, static, shared]
 WITH_FREETYPE  # [0, 1, static, shared]
 WITH_LIBJPEG   # [0, 1, static, shared]
@@ -149,10 +164,37 @@ WITH_LIBJPEG   # [0, 1, static, shared]
 WITH_YAML      # [0, 1, static, shared, dynamic]
 WITH_TIDY      # [0, 1, static, shared, dynamic]
 WITH_MBSTRING  # [0, 1, static, dynamic]
-WITH_ONIGURUMA # [0, 1, static, shared]
-WITH_OPENSSL   # [0, 1, shared, dynamic]
+WITH_ONIGURUMA # [0, 1, static, shared, dynamic]
+WITH_OPENSSL   # [0, 1, static, shared, dynamic]
 WITH_INTL      # [0, 1, static, shared, dynamic]
 ```
+
+---
+
+### SDL runtime options
+
+The standalone [php-sdl-wasm runtime](/extensions/sdl.html) uses these additional flags:
+
+| Option | Values | Default |
+| --- | --- | --- |
+| `WITH_SDL` | `0`, `1`, legacy `dynamic` alias for `1` | `0` normally; enabled by the SDL target |
+| `WITH_SDL_IMAGE` | `0`, `1` | Follows SDL |
+| `WITH_SDL_MIXER` | `0`, `1` | Follows SDL |
+| `WITH_SDL_TTF` | `0`, `1` | Follows SDL |
+| `WITH_OPENGL` | `0`, `1` | Follows SDL |
+
+`php-wasm-builder build sdl mjs` enables SDL and packages the standalone browser
+runtime. The source checkout uses `make sdl-mjs`. Both targets set `WITH_SDL=1`;
+the `_sdl` suffix only separates internal native outputs and configure caches.
+Add-ons require SDL and are compiled into the runtime. SDL_image needs enabled
+`WITH_LIBPNG` and `WITH_LIBJPEG`; SDL_ttf needs `WITH_FREETYPE`. These reuse the
+existing static/shared codec libraries. `WITH_ZLIB=0` still supplies the native
+zlib archive when image/font decoding needs it.
+
+To retain only core SDL, set all four add-on flags to `0` in `.php-wasm-rc`, then
+run `php-wasm-builder build sdl mjs` with `php-wasm-builder` 0.2.0 or later.
+The output in `packages/php-sdl-wasm` includes the required native libraries
+and preload data; keep those files with the runtime.
 
 ---
 
@@ -166,7 +208,7 @@ When compiled as a `dynamic` extension, this will produce the extension file `ph
 
 ### WITH_LIBXML
 
-static|**shared**
+static|shared|**dynamic**
 
 This actual `php-libxml` extension must be statically compiled, but `libxml` itself may be loaded as a shared library.
 
@@ -298,7 +340,7 @@ If `WITH_MBSTRING` is `dynamic`, then loading will be deferred until after `mbst
 
 ### WITH_OPENSSL
 
-shared|**dynamic**
+static|shared|**dynamic**
 
 When compiled as a `dynamic` extension, this will produce the extension `php8.x-openssl.so`.
 

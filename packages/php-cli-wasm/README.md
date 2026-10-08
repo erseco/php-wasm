@@ -1,4 +1,4 @@
-# [![seanmorris/php-cli-wasm](https://github.com/seanmorris/php-wasm/blob/master/docs/sean-icon.png)](https://github.com/seanmorris/php-wasm) php-cli-wasm
+# [![seanmorris/php-cli-wasm](https://seanmorris.github.io/php-wasm/sean-icon.png)](https://github.com/seanmorris/php-wasm) php-cli-wasm
 
 Find `php-cli-wasm` on [npm](https://npmjs.com/package/php-cli-wasm)
 
@@ -31,6 +31,11 @@ await php.run();
 ```
 
 Runtime-loadable extension helper JS packages remain ESM-only; provide extension assets manually through the runtime constructor options when you need to bypass the helper packages.
+
+Filesystem helpers include `await php.readdir(path)` for names and
+`await php.readdir(path, {withFileTypes: true})` for serializable `{name, isFolder}`
+entries. Both forms include `.` and `..`; types follow symbolic links and metadata
+errors reject the call. See [filesystem operations](https://php-wasm.seanmorr.is/filesystem/fs-operations.html).
 
 For broader project documentation, see:
 

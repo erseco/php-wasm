@@ -1,5 +1,5 @@
-import type { PhpCgiRuntimeArgs } from './public';
-import { PhpCgiWebBase } from './PhpCgiWebBase.mjs';
+import type { PhpCgiRuntimeArgs } from './public.d.ts';
+import type { PhpCgiWebBase } from './PhpCgiWebBase.mjs';
 
 export class PhpCgiWeb extends PhpCgiWebBase {
 	constructor(args?: PhpCgiRuntimeArgs);
